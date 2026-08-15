@@ -1,4 +1,5 @@
 package com.lucasrocha.craftai.client;
+import com.lucasrocha.craftai.client.data.MinecraftDataService;
 
 import com.lucasrocha.craftai.client.service.CraftAiApi;
 import net.fabricmc.api.ClientModInitializer;
@@ -8,6 +9,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.client.Minecraft;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import java.util.concurrent.atomic.AtomicBoolean;
+
 
 public class CraftAiClient implements ClientModInitializer {
 
@@ -28,6 +30,11 @@ public class CraftAiClient implements ClientModInitializer {
 												context,
 												"question"
 										);
+
+										String minecraftItem =
+												MinecraftDataService.findItemInQuestion(question);
+
+										System.out.println("CraftAI found: " + minecraftItem);
 
 										if (!requestInProgress.compareAndSet(false, true)) {
 											context.getSource().sendFeedback(
