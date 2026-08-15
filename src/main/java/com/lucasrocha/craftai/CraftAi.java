@@ -1,7 +1,6 @@
 package com.lucasrocha.craftai;
 
 import net.fabricmc.api.ModInitializer;
-
 import net.minecraft.resources.Identifier;
 
 import org.slf4j.Logger;
@@ -17,10 +16,6 @@ public class CraftAi implements ModInitializer {
 
 	@Override
 	public void onInitialize() {
-		// This code runs as soon as Minecraft is in a mod-load-ready state.
-		// However, some things (like resources) may still be uninitialized.
-		// Proceed with mild caution.
-
 		LOGGER.info("CraftAI has been successfully initialized!");
 	}
 
