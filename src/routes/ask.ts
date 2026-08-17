@@ -6,11 +6,16 @@ const router = Router();
 router.post("/", async (req, res) => {
     const question = req.body.question;
     const matchedItem = req.body.matchedItem;
+    const matchedItemName = req.body.matchedItemName;
+    const matchedItemMaxStackSize = req.body.matchedItemMaxStackSize;
+
 
     const answer = await generateAnswer(
         question,
-        matchedItem
-    );
+        matchedItem,
+        matchedItemName,
+        matchedItemMaxStackSize
+        );
 
     res.json({
         answer: answer

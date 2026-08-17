@@ -7,7 +7,9 @@ const openai = new OpenAI({
 
 export async function generateAnswer(
     question: string,
-    matchedItem: string | undefined
+    matchedItem: string | undefined,
+    matchedItemName: string | undefined,
+    matchedItemMaxStackSize: number | undefined
 ): Promise<string> {
 
     const response = await openai.responses.create({
@@ -19,7 +21,15 @@ The player asked:
 ${question}
 
 Minecraft information detected:
-${matchedItem ?? "No specific Minecraft item was detected."}
+
+Item ID:
+${matchedItem ?? "None"}
+
+Item name:
+${matchedItemName ?? "None"}
+
+Maximum stack size:
+${matchedItemMaxStackSize ?? "Unknown"}
 
 Answer the player's question specifically in the context of Minecraft.
 `
