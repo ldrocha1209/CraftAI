@@ -10,6 +10,7 @@ import net.minecraft.client.Minecraft;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import java.util.concurrent.atomic.AtomicBoolean;
 import com.lucasrocha.craftai.client.data.CraftAiContext;
+import com.lucasrocha.craftai.client.data.MinecraftItemData;
 
 
 public class CraftAiClient implements ClientModInitializer {
@@ -32,8 +33,11 @@ public class CraftAiClient implements ClientModInitializer {
 												"question"
 										);
 
-										String minecraftItem =
+										MinecraftItemData minecraftItem =
 												MinecraftDataService.findItemInQuestion(question);
+
+										System.out.println("CraftAI found: " +
+												(minecraftItem != null ? minecraftItem.getId() : "nothing found"));
 
 										CraftAiContext aiContext = new CraftAiContext(
 												question,

@@ -21,7 +21,23 @@ public class CraftAiApi {
 
         JsonObject requestJson = new JsonObject();
         requestJson.addProperty("question", context.getQuestion());
-        requestJson.addProperty("matchedItem", context.getMatchedItem());
+
+        if (context.getMatchedItem() != null) {
+            requestJson.addProperty(
+                    "matchedItem",
+                    context.getMatchedItem().getId()
+            );
+
+            requestJson.addProperty(
+                    "matchedItemName",
+                    context.getMatchedItem().getName()
+            );
+
+            requestJson.addProperty(
+                    "matchedItemMaxStackSize",
+                    context.getMatchedItem().getMaxStackSize()
+            );
+        }
 
         String json = requestJson.toString();
 

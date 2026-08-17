@@ -3,9 +3,12 @@ package com.lucasrocha.craftai.client.data;
 public class CraftAiContext {
 
     private final String question;
-    private final String matchedItem;
+    private final MinecraftItemData matchedItem;
 
-    public CraftAiContext(String question, String matchedItem) {
+    public CraftAiContext(
+            String question,
+            MinecraftItemData matchedItem
+    ) {
         this.question = question;
         this.matchedItem = matchedItem;
     }
@@ -14,7 +17,7 @@ public class CraftAiContext {
         return question;
     }
 
-    public String getMatchedItem() {
+    public MinecraftItemData getMatchedItem() {
         return matchedItem;
     }
 }
