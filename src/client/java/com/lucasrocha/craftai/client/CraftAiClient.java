@@ -9,6 +9,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.client.Minecraft;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import java.util.concurrent.atomic.AtomicBoolean;
+import com.lucasrocha.craftai.client.data.CraftAiContext;
 
 
 public class CraftAiClient implements ClientModInitializer {
@@ -34,6 +35,11 @@ public class CraftAiClient implements ClientModInitializer {
 										String minecraftItem =
 												MinecraftDataService.findItemInQuestion(question);
 
+										CraftAiContext aiContext = new CraftAiContext(
+												question,
+												minecraftItem
+										);
+
 										System.out.println("CraftAI found: " + minecraftItem);
 
 										if (!requestInProgress.compareAndSet(false, true)) {
@@ -48,7 +54,7 @@ public class CraftAiClient implements ClientModInitializer {
 												Component.literal("CraftAI: Thinking...")
 										);
 
-										api.askQuestion(question)
+										api.askQuestion(aiContext)
 												.thenAccept(response -> {
 													Minecraft.getInstance().execute(() -> {
 														context.getSource().sendFeedback(

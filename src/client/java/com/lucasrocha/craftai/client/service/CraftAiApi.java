@@ -2,6 +2,7 @@ package com.lucasrocha.craftai.client.service;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.lucasrocha.craftai.client.data.CraftAiContext;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -16,10 +17,11 @@ public class CraftAiApi {
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
-    public CompletableFuture<String> askQuestion(String question) {
+    public CompletableFuture<String> askQuestion(CraftAiContext context) {
 
         JsonObject requestJson = new JsonObject();
-        requestJson.addProperty("question", question);
+        requestJson.addProperty("question", context.getQuestion());
+        requestJson.addProperty("matchedItem", context.getMatchedItem());
 
         String json = requestJson.toString();
 
