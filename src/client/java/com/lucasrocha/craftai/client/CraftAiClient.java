@@ -87,12 +87,50 @@ public class CraftAiClient implements ClientModInitializer {
 																	.name();
 												}
 
+												String timeOfDay = "UNKNOWN";
+
+												if (Minecraft.getInstance().level != null) {
+
+													long dayTime = Minecraft.getInstance()
+															.level
+															.getOverworldClockTime();
+
+													long timeInDay = dayTime % 24000;
+
+													if (timeInDay < 12000) {
+														timeOfDay = "DAY";
+													} else {
+														timeOfDay = "NIGHT";
+													}
+
+													System.out.println(
+															"CraftAI time of day: " + timeOfDay
+													);
+												}
+
+												String biome = "UNKNOWN";
+
+												if (player != null && Minecraft.getInstance().level != null) {
+
+													var biomeHolder = Minecraft.getInstance()
+															.level
+															.getBiome(player.blockPosition());
+
+													biome = biomeHolder
+															.unwrapKey()
+															.map(key -> key.toString())
+															.map(key -> key.substring(key.lastIndexOf("minecraft:")))
+															.orElse("UNKNOWN");
+												}
+
 												CraftAiContext aiContext =
 														new CraftAiContext(
 																question,
 																minecraftItem,
 																minecraftRecipe,
-																gameMode
+																gameMode,
+																biome,
+																timeOfDay
 														);
 
 												System.out.println(
@@ -175,11 +213,11 @@ public class CraftAiClient implements ClientModInitializer {
 							client.player.blockPosition()
 					);
 
-			String currentBiome =
-					biomeHolder
-							.unwrapKey()
-							.map(key -> key.toString())
-							.orElse("UNKNOWN");
+			String currentBiome = biomeHolder
+					.unwrapKey()
+					.map(key -> key.toString())
+					.map(key -> key.substring(key.lastIndexOf("minecraft:")))
+					.orElse("UNKNOWN");
 
 			if (lastBiome == null) {
 
@@ -191,10 +229,7 @@ public class CraftAiClient implements ClientModInitializer {
 
 				String biomeName =
 						currentBiome
-								.replace(
-										"ResourceKey[minecraft:worldgen/biome / minecraft:",
-										""
-								)
+								.replace("minecraft:", "")
 								.replace("]", "")
 								.replace("_", " ");
 

@@ -28,6 +28,16 @@ public class CraftAiApi {
                 context.getGameMode()
         );
 
+        requestJson.addProperty(
+                "biome",
+                context.getBiome()
+        );
+
+        requestJson.addProperty(
+                "timeOfDay",
+                context.getTimeOfDay()
+        );
+
         if (context.getMatchedItem() != null) {
             requestJson.addProperty(
                     "matchedItem",
