@@ -11,6 +11,12 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import java.util.concurrent.atomic.AtomicBoolean;
 import com.lucasrocha.craftai.client.data.CraftAiContext;
 import com.lucasrocha.craftai.client.data.MinecraftItemData;
+import net.minecraft.world.item.crafting.RecipeType;
+import net.minecraft.world.item.crafting.display.ShapedCraftingRecipeDisplay;
+import net.minecraft.world.item.crafting.display.SlotDisplay;
+import java.util.HashMap;
+import com.lucasrocha.craftai.client.data.MinecraftRecipeData;
+import java.util.Map;
 
 
 public class CraftAiClient implements ClientModInitializer {
@@ -36,12 +42,29 @@ public class CraftAiClient implements ClientModInitializer {
 										MinecraftItemData minecraftItem =
 												MinecraftDataService.findItemInQuestion(question);
 
+										MinecraftRecipeData minecraftRecipe = null;
+
+										if (minecraftItem != null) {
+											minecraftRecipe =
+													MinecraftDataService.findRecipe(
+															minecraftItem.getId()
+													);
+										}
+
+										if (minecraftRecipe != null) {
+											System.out.println(
+													"CraftAI recipe found: " +
+															minecraftRecipe.getIngredients()
+											);
+										}
+
 										System.out.println("CraftAI found: " +
 												(minecraftItem != null ? minecraftItem.getId() : "nothing found"));
 
 										CraftAiContext aiContext = new CraftAiContext(
 												question,
-												minecraftItem
+												minecraftItem,
+												minecraftRecipe
 										);
 
 										System.out.println("CraftAI found: " + minecraftItem);

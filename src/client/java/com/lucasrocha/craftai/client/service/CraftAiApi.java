@@ -10,6 +10,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.concurrent.CompletableFuture;
 import java.time.Duration;
+import com.google.gson.JsonObject;
+import java.util.Map;
 
 public class CraftAiApi {
 
@@ -36,6 +38,30 @@ public class CraftAiApi {
             requestJson.addProperty(
                     "matchedItemMaxStackSize",
                     context.getMatchedItem().getMaxStackSize()
+            );
+        }
+
+        if (context.getRecipe() != null) {
+
+            JsonObject recipeJson = new JsonObject();
+
+            recipeJson.addProperty(
+                    "recipeId",
+                    context.getRecipe().getRecipeId()
+            );
+
+            for (Map.Entry<String, Integer> ingredient :
+                    context.getRecipe().getIngredients().entrySet()) {
+
+                recipeJson.addProperty(
+                        ingredient.getKey(),
+                        ingredient.getValue()
+                );
+            }
+
+            requestJson.add(
+                    "recipe",
+                    recipeJson
             );
         }
 
