@@ -10,7 +10,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.concurrent.CompletableFuture;
 import java.time.Duration;
-import com.google.gson.JsonObject;
 import java.util.Map;
 
 public class CraftAiApi {
@@ -23,6 +22,11 @@ public class CraftAiApi {
 
         JsonObject requestJson = new JsonObject();
         requestJson.addProperty("question", context.getQuestion());
+
+        requestJson.addProperty(
+                "gameMode",
+                context.getGameMode()
+        );
 
         if (context.getMatchedItem() != null) {
             requestJson.addProperty(
