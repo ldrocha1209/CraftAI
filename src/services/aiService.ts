@@ -5,10 +5,24 @@ const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
 });
 
-export async function generateAnswer(question: string): Promise<string> {
+export async function generateAnswer(
+    question: string,
+    matchedItem: string | undefined
+): Promise<string> {
+
     const response = await openai.responses.create({
         model: "gpt-5.6-luna",
-        input: question
+        input: `
+You are CraftAI, an AI assistant specifically for Minecraft.
+
+The player asked:
+${question}
+
+Minecraft information detected:
+${matchedItem ?? "No specific Minecraft item was detected."}
+
+Answer the player's question specifically in the context of Minecraft.
+`
     });
 
     return response.output_text;
