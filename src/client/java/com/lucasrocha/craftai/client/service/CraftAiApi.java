@@ -11,6 +11,7 @@ import java.net.http.HttpResponse;
 import java.util.concurrent.CompletableFuture;
 import java.time.Duration;
 import java.util.Map;
+import com.google.gson.Gson;
 
 public class CraftAiApi {
 
@@ -36,6 +37,13 @@ public class CraftAiApi {
         requestJson.addProperty(
                 "timeOfDay",
                 context.getTimeOfDay()
+        );
+
+        requestJson.add(
+                "inventory",
+                new Gson().toJsonTree(
+                        context.getInventory()
+                )
         );
 
         if (context.getMatchedItem() != null) {

@@ -13,6 +13,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import com.lucasrocha.craftai.client.data.CraftAiContext;
 import com.lucasrocha.craftai.client.data.MinecraftItemData;
 import com.lucasrocha.craftai.client.data.MinecraftRecipeData;
+import java.util.HashMap;
+import java.util.Map;
 
 public class CraftAiClient implements ClientModInitializer {
 
@@ -76,6 +78,31 @@ public class CraftAiClient implements ClientModInitializer {
 												var player =
 														Minecraft.getInstance().player;
 
+												Map<String, Integer> inventoryCounts = new HashMap<>();
+
+												if (player != null) {
+
+													for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+
+														var stack = player.getInventory().getItem(i);
+
+														if (!stack.isEmpty()) {
+
+															String itemId = stack.getItem().toString();
+
+															inventoryCounts.merge(
+																	itemId,
+																	stack.getCount(),
+																	Integer::sum
+															);
+														}
+													}
+
+													System.out.println(
+															"CraftAI inventory: " + inventoryCounts
+													);
+												}
+
 												String gameMode = "UNKNOWN";
 
 												if (player != null) {
@@ -130,7 +157,9 @@ public class CraftAiClient implements ClientModInitializer {
 																minecraftRecipe,
 																gameMode,
 																biome,
-																timeOfDay
+																timeOfDay,
+																inventoryCounts
+
 														);
 
 												System.out.println(

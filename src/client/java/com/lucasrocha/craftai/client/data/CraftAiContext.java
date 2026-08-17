@@ -1,4 +1,5 @@
 package com.lucasrocha.craftai.client.data;
+import java.util.Map;
 
 public class CraftAiContext {
 
@@ -8,6 +9,7 @@ public class CraftAiContext {
     private final String gameMode;
     private final String biome;
     private final String timeOfDay;
+    private final Map<String, Integer> inventory;
 
     public CraftAiContext(
             String question,
@@ -15,7 +17,8 @@ public class CraftAiContext {
             MinecraftRecipeData recipe,
             String gameMode,
             String biome,
-            String timeOfDay
+            String timeOfDay,
+            Map<String, Integer> inventory
     ) {
         this.question = question;
         this.matchedItem = matchedItem;
@@ -23,6 +26,7 @@ public class CraftAiContext {
         this.gameMode = gameMode;
         this.biome = biome;
         this.timeOfDay = timeOfDay;
+        this.inventory = inventory;
     }
 
     public String getQuestion() {
@@ -47,5 +51,9 @@ public class CraftAiContext {
 
     public String getTimeOfDay() {
         return timeOfDay;
+    }
+
+    public Map<String, Integer> getInventory() {
+        return inventory;
     }
 }
