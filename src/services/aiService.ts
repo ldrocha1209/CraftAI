@@ -9,7 +9,8 @@ export async function generateAnswer(
     question: string,
     matchedItem: string | undefined,
     matchedItemName: string | undefined,
-    matchedItemMaxStackSize: number | undefined
+    matchedItemMaxStackSize: number | undefined,
+    recipe: any
 ): Promise<string> {
 
     const response = await openai.responses.create({
@@ -30,6 +31,10 @@ ${matchedItemName ?? "None"}
 
 Maximum stack size:
 ${matchedItemMaxStackSize ?? "Unknown"}
+
+Recipe information:
+
+${recipe ? JSON.stringify(recipe, null, 2) : "No recipe data available."}
 
 Answer the player's question specifically in the context of Minecraft.
 `
