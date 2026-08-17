@@ -14,9 +14,7 @@ router.post("/", async (req, res) => {
     const gameMode = req.body.gameMode;
     const biome = req.body.biome;
     const timeOfDay = req.body.timeOfDay;
-
-    console.log("CraftAI received game mode:", gameMode);
-    console.log("CraftAI received biome:", biome);
+    const inventory = req.body.inventory;
 
     const answer = await generateAnswer(
         question,
@@ -27,7 +25,8 @@ router.post("/", async (req, res) => {
         wikiContext,
         gameMode,
         biome,
-        timeOfDay
+        timeOfDay,
+        inventory
         );
 
     res.json({
