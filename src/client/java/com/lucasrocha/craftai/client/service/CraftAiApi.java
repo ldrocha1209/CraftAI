@@ -46,6 +46,16 @@ public class CraftAiApi {
                 )
         );
 
+        requestJson.addProperty(
+                "playerPosition",
+                context.getPlayerPosition()
+        );
+
+        requestJson.addProperty(
+                "dimension",
+                context.getDimension()
+        );
+
         if (context.getMatchedItem() != null) {
             requestJson.addProperty(
                     "matchedItem",

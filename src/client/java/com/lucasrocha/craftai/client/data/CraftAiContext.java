@@ -10,6 +10,8 @@ public class CraftAiContext {
     private final String biome;
     private final String timeOfDay;
     private final Map<String, Integer> inventory;
+    private final String dimension;
+    private final String playerPosition;
 
     public CraftAiContext(
             String question,
@@ -18,7 +20,10 @@ public class CraftAiContext {
             String gameMode,
             String biome,
             String timeOfDay,
-            Map<String, Integer> inventory
+            Map<String, Integer> inventory,
+            String dimension,
+            String playerPosition
+
     ) {
         this.question = question;
         this.matchedItem = matchedItem;
@@ -27,6 +32,9 @@ public class CraftAiContext {
         this.biome = biome;
         this.timeOfDay = timeOfDay;
         this.inventory = inventory;
+        this.dimension = dimension;
+        this.playerPosition = playerPosition;
+
     }
 
     public String getQuestion() {
@@ -55,5 +63,13 @@ public class CraftAiContext {
 
     public Map<String, Integer> getInventory() {
         return inventory;
+    }
+
+    public String getDimension() {
+        return dimension;
+    }
+
+    public String getPlayerPosition() {
+        return playerPosition;
     }
 }

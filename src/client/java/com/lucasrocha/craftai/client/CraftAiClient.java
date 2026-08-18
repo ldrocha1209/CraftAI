@@ -135,6 +135,35 @@ public class CraftAiClient implements ClientModInitializer {
 													);
 												}
 
+												String dimension = "UNKNOWN";
+
+												if (Minecraft.getInstance().level != null) {
+
+													dimension = Minecraft.getInstance()
+															.level
+															.dimension()
+															.identifier()
+															.toString();
+
+													System.out.println(
+															"CraftAI dimension: " + dimension
+													);
+												}
+
+												String playerPosition = "UNKNOWN";
+
+												if (player != null) {
+
+													playerPosition =
+															"X: " + Math.round(player.getX()) +
+																	", Y: " + Math.round(player.getY()) +
+																	", Z: " + Math.round(player.getZ());
+
+													System.out.println(
+															"CraftAI player position: " + playerPosition
+													);
+												}
+
 												String biome = "UNKNOWN";
 
 												if (player != null && Minecraft.getInstance().level != null) {
@@ -158,8 +187,9 @@ public class CraftAiClient implements ClientModInitializer {
 																gameMode,
 																biome,
 																timeOfDay,
-																inventoryCounts
-
+																inventoryCounts,
+																dimension,
+																playerPosition
 														);
 
 												System.out.println(
