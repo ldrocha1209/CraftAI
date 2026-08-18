@@ -14,6 +14,14 @@ import com.lucasrocha.craftai.client.data.CraftAiContext;
 import com.lucasrocha.craftai.client.data.MinecraftItemData;
 import com.lucasrocha.craftai.client.data.MinecraftRecipeData;
 import net.minecraft.world.entity.EquipmentSlot;
+import com.lucasrocha.craftai.client.service.WorldQueryService;
+import java.util.concurrent.CompletableFuture;
+import net.minecraft.world.level.biome.Biomes;
+import net.minecraft.core.Holder;
+import net.minecraft.world.level.biome.Biome;
+import java.util.function.Predicate;
+import net.minecraft.core.BlockPos;
+import net.minecraft.tags.StructureTags;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -45,6 +53,17 @@ public class CraftAiClient implements ClientModInitializer {
 																context,
 																"question"
 														);
+
+												String villageResults = null;
+
+												boolean askingAboutVillage =
+														question.toLowerCase().contains("village");
+
+												boolean askingAboutDesert =
+														question.toLowerCase().contains("desert");
+
+												CompletableFuture<String> worldSearchFuture =
+														CompletableFuture.completedFuture(null);
 
 												MinecraftItemData minecraftItem =
 														MinecraftDataService.findItemInQuestion(
@@ -78,6 +97,64 @@ public class CraftAiClient implements ClientModInitializer {
 
 												var player =
 														Minecraft.getInstance().player;
+
+												var minecraft = Minecraft.getInstance();
+												var server = minecraft.getSingleplayerServer();
+
+												if (askingAboutVillage && player != null) {
+
+													if (server != null) {
+
+														worldSearchFuture =
+																WorldQueryService.findNearestVillageAsync(
+																				server,
+																				player.blockPosition()
+																		)
+																		.thenApply(village -> {
+
+																			if (village == null) {
+																				return "No nearby village was found.";
+																			}
+
+																			return "Nearest village: X: " +
+																					village.x() +
+																					", Z: " +
+																					village.z() +
+																					" (approximately " +
+																					village.distance() +
+																					" blocks away)";
+																		});
+													}
+												}
+
+												if (askingAboutDesert && player != null) {
+
+													minecraft = Minecraft.getInstance();
+													server = minecraft.getSingleplayerServer();
+
+													if (server != null) {
+
+														worldSearchFuture =
+																WorldQueryService.findNearestDesertAsync(
+																				server,
+																				player.blockPosition()
+																		)
+																		.thenApply(desert -> {
+
+																			if (desert == null) {
+																				return "No nearby desert was found.";
+																			}
+
+																			return "Nearest desert: X: " +
+																					desert.x() +
+																					", Z: " +
+																					desert.z() +
+																					" (approximately " +
+																					desert.distance() +
+																					" blocks away)";
+																		});
+													}
+												}
 
 												Map<String, Integer> inventoryCounts = new HashMap<>();
 
@@ -150,6 +227,7 @@ public class CraftAiClient implements ClientModInitializer {
 															"CraftAI dimension: " + dimension
 													);
 												}
+
 
 												String playerPosition = "UNKNOWN";
 
@@ -278,7 +356,15 @@ public class CraftAiClient implements ClientModInitializer {
 														)
 												);
 
-												api.askQuestion(aiContext)
+												worldSearchFuture
+														.thenCompose(worldSearchResult -> {
+
+															return api.askQuestion(
+																	aiContext,
+																	worldSearchResult
+															);
+
+														})
 														.thenAccept(response -> {
 
 															Minecraft.getInstance().execute(() -> {

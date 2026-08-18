@@ -19,7 +19,12 @@ public class CraftAiApi {
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
-    public CompletableFuture<String> askQuestion(CraftAiContext context) {
+    public CompletableFuture<String> askQuestion(
+            CraftAiContext context,
+            String villageResults
+    ) {
+
+
 
         JsonObject requestJson = new JsonObject();
         requestJson.addProperty("question", context.getQuestion());
@@ -84,6 +89,11 @@ public class CraftAiApi {
         requestJson.addProperty(
                 "boots",
                 context.getBoots()
+        );
+
+        requestJson.addProperty(
+                "villageResults",
+                villageResults
         );
 
         if (context.getMatchedItem() != null) {
