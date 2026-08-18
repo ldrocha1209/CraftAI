@@ -17,6 +17,12 @@ router.post("/", async (req, res) => {
     const inventory = req.body.inventory;
     const dimension = req.body.dimension;
     const playerPosition = req.body.playerPosition;
+    const mainHandItem = req.body.mainHandItem;
+    const offHandItem = req.body.offHandItem;
+    const helmet = req.body.helmet;
+    const chestplate = req.body.chestplate;
+    const leggings = req.body.leggings;
+    const boots = req.body.boots;
 
     const answer = await generateAnswer(
         question,
@@ -30,7 +36,13 @@ router.post("/", async (req, res) => {
         timeOfDay,
         inventory,
         dimension,
-        playerPosition
+        playerPosition,
+        mainHandItem,
+        offHandItem,
+        helmet,
+        chestplate,
+        leggings,
+        boots
         );
 
     res.json({

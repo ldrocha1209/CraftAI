@@ -17,7 +17,13 @@ export async function generateAnswer(
     timeOfDay: string | undefined,
     inventory: Record<string, number>,
     dimension: string | undefined,
-    playerPosition: string | undefined
+    playerPosition: string | undefined,
+    mainHandItem: string | undefined,
+    offHandItem: string | undefined,
+    helmet: string | undefined,
+    chestplate: string | undefined,
+    leggings: string | undefined,
+    boots: string | undefined
 ): Promise<string> {
 
     const response = await openai.responses.create({
@@ -48,6 +54,26 @@ export async function generateAnswer(
 
         Player position:
         ${playerPosition ?? "Unknown"}
+
+        Main hand:
+        ${mainHandItem ?? "Unknown"}
+
+        Off hand:
+        ${offHandItem ?? "Unknown"}
+
+        Armor:
+
+        Helmet:
+        ${helmet ?? "Unknown"}
+
+        Chestplate:
+        ${chestplate ?? "Unknown"}
+
+        Leggings:
+        ${leggings ?? "Unknown"}
+
+        Boots:
+        ${boots ?? "Unknown"}
         
         Player inventory:
         ${JSON.stringify(inventory, null, 2)}
