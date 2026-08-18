@@ -12,6 +12,13 @@ public class CraftAiContext {
     private final Map<String, Integer> inventory;
     private final String dimension;
     private final String playerPosition;
+    private final String mainHandItem;
+    private final String offHandItem;
+    private final String helmet;
+    private final String chestplate;
+    private final String leggings;
+    private final String boots;
+
 
     public CraftAiContext(
             String question,
@@ -22,7 +29,13 @@ public class CraftAiContext {
             String timeOfDay,
             Map<String, Integer> inventory,
             String dimension,
-            String playerPosition
+            String playerPosition,
+            String mainHandItem,
+            String offHandItem,
+            String helmet,
+            String chestplate,
+            String leggings,
+            String boots
 
     ) {
         this.question = question;
@@ -34,6 +47,12 @@ public class CraftAiContext {
         this.inventory = inventory;
         this.dimension = dimension;
         this.playerPosition = playerPosition;
+        this.mainHandItem = mainHandItem;
+        this.offHandItem = offHandItem;
+        this.helmet = helmet;
+        this.chestplate = chestplate;
+        this.leggings = leggings;
+        this.boots = boots;
 
     }
 
@@ -71,5 +90,29 @@ public class CraftAiContext {
 
     public String getPlayerPosition() {
         return playerPosition;
+    }
+
+    public String getMainHandItem() {
+        return mainHandItem;
+    }
+
+    public String getOffHandItem() {
+        return offHandItem;
+    }
+
+    public String getHelmet() {
+        return helmet;
+    }
+
+    public String getChestplate() {
+        return chestplate;
+    }
+
+    public String getLeggings() {
+        return leggings;
+    }
+
+    public String getBoots() {
+        return boots;
     }
 }

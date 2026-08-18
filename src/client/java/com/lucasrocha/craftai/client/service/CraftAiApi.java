@@ -56,6 +56,36 @@ public class CraftAiApi {
                 context.getDimension()
         );
 
+        requestJson.addProperty(
+                "mainHandItem",
+                context.getMainHandItem()
+        );
+
+        requestJson.addProperty(
+                "offHandItem",
+                context.getOffHandItem()
+        );
+
+        requestJson.addProperty(
+                "helmet",
+                context.getHelmet()
+        );
+
+        requestJson.addProperty(
+                "chestplate",
+                context.getChestplate()
+        );
+
+        requestJson.addProperty(
+                "leggings",
+                context.getLeggings()
+        );
+
+        requestJson.addProperty(
+                "boots",
+                context.getBoots()
+        );
+
         if (context.getMatchedItem() != null) {
             requestJson.addProperty(
                     "matchedItem",

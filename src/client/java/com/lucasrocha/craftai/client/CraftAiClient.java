@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import com.lucasrocha.craftai.client.data.CraftAiContext;
 import com.lucasrocha.craftai.client.data.MinecraftItemData;
 import com.lucasrocha.craftai.client.data.MinecraftRecipeData;
+import net.minecraft.world.entity.EquipmentSlot;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -164,6 +165,60 @@ public class CraftAiClient implements ClientModInitializer {
 													);
 												}
 
+												String mainHandItem = "EMPTY";
+												String offHandItem = "EMPTY";
+												String helmet = "EMPTY";
+												String chestplate = "EMPTY";
+												String leggings = "EMPTY";
+												String boots = "EMPTY";
+
+												if (player != null) {
+
+													var mainHandStack = player.getMainHandItem();
+													var offHandStack = player.getOffhandItem();
+													var helmetStack = player.getItemBySlot(EquipmentSlot.HEAD);
+													var chestplateStack = player.getItemBySlot(EquipmentSlot.CHEST);
+													var leggingsStack = player.getItemBySlot(EquipmentSlot.LEGS);
+													var bootsStack = player.getItemBySlot(EquipmentSlot.FEET);
+
+													if (!helmetStack.isEmpty()) {
+														helmet = helmetStack.getItem().toString();
+													}
+
+													if (!chestplateStack.isEmpty()) {
+														chestplate = chestplateStack.getItem().toString();
+													}
+
+													if (!leggingsStack.isEmpty()) {
+														leggings = leggingsStack.getItem().toString();
+													}
+
+													if (!bootsStack.isEmpty()) {
+														boots = bootsStack.getItem().toString();
+													}
+
+													System.out.println("CraftAI helmet: " + helmet);
+													System.out.println("CraftAI chestplate: " + chestplate);
+													System.out.println("CraftAI leggings: " + leggings);
+													System.out.println("CraftAI boots: " + boots);
+
+													if (!mainHandStack.isEmpty()) {
+														mainHandItem = mainHandStack.getItem().toString();
+													}
+
+													if (!offHandStack.isEmpty()) {
+														offHandItem = offHandStack.getItem().toString();
+													}
+
+													System.out.println(
+															"CraftAI main hand: " + mainHandItem
+													);
+
+													System.out.println(
+															"CraftAI off hand: " + offHandItem
+													);
+												}
+
 												String biome = "UNKNOWN";
 
 												if (player != null && Minecraft.getInstance().level != null) {
@@ -189,7 +244,13 @@ public class CraftAiClient implements ClientModInitializer {
 																timeOfDay,
 																inventoryCounts,
 																dimension,
-																playerPosition
+																playerPosition,
+																mainHandItem,
+																offHandItem,
+																helmet,
+																chestplate,
+																leggings,
+																boots
 														);
 
 												System.out.println(
