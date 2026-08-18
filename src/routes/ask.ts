@@ -23,6 +23,7 @@ router.post("/", async (req, res) => {
     const chestplate = req.body.chestplate;
     const leggings = req.body.leggings;
     const boots = req.body.boots;
+    const villageResults = req.body.villageResults;
 
     const answer = await generateAnswer(
         question,
@@ -42,7 +43,8 @@ router.post("/", async (req, res) => {
         helmet,
         chestplate,
         leggings,
-        boots
+        boots,
+        villageResults
         );
 
     res.json({

@@ -23,7 +23,8 @@ export async function generateAnswer(
     helmet: string | undefined,
     chestplate: string | undefined,
     leggings: string | undefined,
-    boots: string | undefined
+    boots: string | undefined,
+    villageResults: string | null
 ): Promise<string> {
 
     const response = await openai.responses.create({
@@ -77,6 +78,20 @@ export async function generateAnswer(
         
         Player inventory:
         ${JSON.stringify(inventory, null, 2)}
+
+        WORLD SEARCH RESULTS:
+
+        Village search:
+        ${villageResults ?? "No village search was performed."}
+
+        WORLD SEARCH RULES
+
+        - World search results are calculated directly from the player's Minecraft world.
+        - Treat provided world search results as authoritative.
+        - Only use world search results when they are provided.
+        - Do not invent coordinates or claim that a structure was found if no search result was provided.
+        - If the player asks for a location and a relevant search result is available, use the provided coordinates and distance.
+        - Do not confuse general Minecraft knowledge with actual locations in the player's world.
         
         Matched Minecraft item:
         
