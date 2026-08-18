@@ -15,7 +15,9 @@ export async function generateAnswer(
     gameMode: string | undefined,
     biome: string | undefined,
     timeOfDay: string | undefined,
-    inventory: Record<string, number>
+    inventory: Record<string, number>,
+    dimension: string | undefined,
+    playerPosition: string | undefined
 ): Promise<string> {
 
     const response = await openai.responses.create({
@@ -40,6 +42,12 @@ export async function generateAnswer(
         
         Time of day:
         ${timeOfDay ?? "Unknown"}
+
+        Dimension:
+        ${dimension ?? "Unknown"}
+
+        Player position:
+        ${playerPosition ?? "Unknown"}
         
         Player inventory:
         ${JSON.stringify(inventory, null, 2)}

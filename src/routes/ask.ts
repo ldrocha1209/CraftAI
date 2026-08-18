@@ -15,6 +15,8 @@ router.post("/", async (req, res) => {
     const biome = req.body.biome;
     const timeOfDay = req.body.timeOfDay;
     const inventory = req.body.inventory;
+    const dimension = req.body.dimension;
+    const playerPosition = req.body.playerPosition;
 
     const answer = await generateAnswer(
         question,
@@ -26,7 +28,9 @@ router.post("/", async (req, res) => {
         gameMode,
         biome,
         timeOfDay,
-        inventory
+        inventory,
+        dimension,
+        playerPosition
         );
 
     res.json({
