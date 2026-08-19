@@ -36,7 +36,7 @@
   },
   "worldQuery": {
     "kind": "STRUCTURE",
-    "target": "VILLAGE",
+    "target": "minecraft:village",
     "status": "FOUND",
     "dimension": "minecraft:overworld",
     "position": {

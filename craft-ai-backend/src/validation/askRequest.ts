@@ -11,6 +11,10 @@ import type {
     WorldQueryStatus,
     WorldQueryTarget
 } from "../types/ask.js";
+import {
+    WORLD_QUERY_TARGETS,
+    worldQueryKindForTarget
+} from "../types/worldQueryTargets.js";
 
 export class RequestValidationError extends Error {
     constructor(public readonly issues: string[]) {
@@ -143,7 +147,7 @@ function parseOptionalWorldQuery(
     const target = readEnum(
         query.target,
         "worldQuery.target",
-        ["VILLAGE", "STRONGHOLD", "DESERT"] as const,
+        WORLD_QUERY_TARGETS,
         issues
     ) as WorldQueryTarget;
     const status = readEnum(
@@ -154,13 +158,9 @@ function parseOptionalWorldQuery(
     ) as WorldQueryStatus;
     const dimension = readString(query.dimension, "worldQuery.dimension", issues);
 
-    const expectedKind: Record<WorldQueryTarget, WorldQueryKind> = {
-        VILLAGE: "STRUCTURE",
-        STRONGHOLD: "STRUCTURE",
-        DESERT: "BIOME"
-    };
-    if (kind !== expectedKind[target]) {
-        issues.push(`worldQuery.kind must be ${expectedKind[target]} for target ${target}.`);
+    const expectedKind = worldQueryKindForTarget(target);
+    if (kind !== expectedKind) {
+        issues.push(`worldQuery.kind must be ${expectedKind} for target ${target}.`);
     }
 
     let position: WorldQueryPosition | undefined;

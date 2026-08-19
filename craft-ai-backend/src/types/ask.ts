@@ -1,3 +1,7 @@
+import type { WorldQueryTarget } from "./worldQueryTargets.js";
+
+export type { WorldQueryTarget } from "./worldQueryTargets.js";
+
 export interface PlayerPosition {
     x: number;
     y: number;
@@ -35,7 +39,6 @@ export interface MinecraftRecipe {
 }
 
 export type WorldQueryKind = "STRUCTURE" | "BIOME";
-export type WorldQueryTarget = "VILLAGE" | "STRONGHOLD" | "DESERT";
 export type WorldQueryStatus = "FOUND" | "NOT_FOUND" | "UNSUPPORTED";
 
 export interface WorldQueryPosition {
