@@ -7,6 +7,12 @@ import {
     parseAskRequest,
     RequestValidationError
 } from "../validation/askRequest.js";
+import {
+    BIOME_WORLD_QUERY_TARGETS,
+    STRUCTURE_WORLD_QUERY_TARGETS,
+    WORLD_QUERY_TARGETS,
+    worldQueryKindForTarget
+} from "../types/worldQueryTargets.js";
 
 const fixture = JSON.parse(
     readFileSync("src/test/fixtures/ask-request.json", "utf8")
@@ -20,7 +26,7 @@ test("accepts the representative Java request contract", () => {
         "Where is the nearest village, and can I craft oak planks?"
     );
     assert.deepEqual(request.player.position, { x: 100, y: 64, z: -40 });
-    assert.equal(request.worldQuery?.target, "VILLAGE");
+    assert.equal(request.worldQuery?.target, "minecraft:village");
     assert.equal(request.worldQuery?.distanceBlocks, 878);
     assert.deepEqual(request.recipe?.ingredients, { "minecraft:oak_log": 1 });
 });
@@ -56,7 +62,7 @@ test("accepts a structured unsupported world search", () => {
         ...(fixture as object),
         worldQuery: {
             kind: "BIOME",
-            target: "DESERT",
+            target: "minecraft:desert",
             status: "UNSUPPORTED",
             dimension: "minecraft:the_nether",
             reason: "World searches currently support the Overworld only."
@@ -64,7 +70,7 @@ test("accepts a structured unsupported world search", () => {
     });
 
     assert.equal(request.worldQuery?.status, "UNSUPPORTED");
-    assert.equal(request.worldQuery?.target, "DESERT");
+    assert.equal(request.worldQuery?.target, "minecraft:desert");
 });
 
 test("accepts a structured not-found world search without coordinates", () => {
@@ -72,7 +78,7 @@ test("accepts a structured not-found world search without coordinates", () => {
         ...(fixture as object),
         worldQuery: {
             kind: "STRUCTURE",
-            target: "VILLAGE",
+            target: "minecraft:village",
             status: "NOT_FOUND",
             dimension: "minecraft:overworld"
         }
@@ -89,7 +95,7 @@ test("accepts a found stronghold search as structured world context", () => {
         question: "Where is the nearest stronghold?",
         worldQuery: {
             kind: "STRUCTURE",
-            target: "STRONGHOLD",
+            target: "minecraft:stronghold",
             status: "FOUND",
             dimension: "minecraft:overworld",
             position: { x: -1248, z: 2112 },
@@ -97,11 +103,11 @@ test("accepts a found stronghold search as structured world context", () => {
         }
     });
 
-    assert.equal(request.worldQuery?.target, "STRONGHOLD");
+    assert.equal(request.worldQuery?.target, "minecraft:stronghold");
     assert.equal(request.worldQuery?.kind, "STRUCTURE");
 
     const prompt = buildCraftAiPrompt(request, null);
-    assert.match(prompt, /"target": "STRONGHOLD"/);
+    assert.match(prompt, /"target": "minecraft:stronghold"/);
     assert.match(prompt, /"x": -1248/);
 });
 
@@ -111,7 +117,7 @@ test("rejects a world-query target with the wrong query kind", () => {
             ...(fixture as object),
             worldQuery: {
                 kind: "BIOME",
-                target: "STRONGHOLD",
+                target: "minecraft:stronghold",
                 status: "NOT_FOUND",
                 dimension: "minecraft:overworld"
             }
@@ -119,7 +125,7 @@ test("rejects a world-query target with the wrong query kind", () => {
         (error: unknown) => {
             assert.ok(error instanceof RequestValidationError);
             assert.ok(error.issues.includes(
-                "worldQuery.kind must be STRUCTURE for target STRONGHOLD."
+                "worldQuery.kind must be STRUCTURE for target minecraft:stronghold."
             ));
             return true;
         }
@@ -144,7 +150,7 @@ test("requires coordinates and distance for a found world search", () => {
             ...(fixture as object),
             worldQuery: {
                 kind: "BIOME",
-                target: "DESERT",
+                target: "minecraft:desert",
                 status: "FOUND",
                 dimension: "minecraft:overworld"
             }
@@ -158,7 +164,7 @@ test("labels desert data by its structured target instead of as a village", () =
         ...(fixture as object),
         worldQuery: {
             kind: "BIOME",
-            target: "DESERT",
+            target: "minecraft:desert",
             status: "FOUND",
             dimension: "minecraft:overworld",
             position: { x: 6068, z: 2738 },
@@ -168,8 +174,30 @@ test("labels desert data by its structured target instead of as a village", () =
 
     const prompt = buildCraftAiPrompt(request, null);
 
-    assert.match(prompt, /"target": "DESERT"/);
+    assert.match(prompt, /"target": "minecraft:desert"/);
     assert.doesNotMatch(prompt, /Village search:/);
+});
+
+test("catalogs every supported biome and structure target", () => {
+    assert.equal(BIOME_WORLD_QUERY_TARGETS.length, 66);
+    assert.equal(STRUCTURE_WORLD_QUERY_TARGETS.length, 21);
+    assert.equal(WORLD_QUERY_TARGETS.length, 87);
+    assert.equal(new Set(WORLD_QUERY_TARGETS).size, WORLD_QUERY_TARGETS.length);
+    assert.equal(worldQueryKindForTarget("minecraft:warped_forest"), "BIOME");
+    assert.equal(worldQueryKindForTarget("minecraft:end_city"), "STRUCTURE");
+
+    for (const target of WORLD_QUERY_TARGETS) {
+        const request = parseAskRequest({
+            ...(fixture as object),
+            worldQuery: {
+                kind: worldQueryKindForTarget(target),
+                target,
+                status: "NOT_FOUND",
+                dimension: "minecraft:overworld"
+            }
+        });
+        assert.equal(request.worldQuery?.target, target);
+    }
 });
 
 test("removes Markdown that Minecraft chat cannot render", () => {

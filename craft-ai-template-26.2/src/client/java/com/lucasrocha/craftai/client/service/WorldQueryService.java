@@ -1,37 +1,52 @@
 package com.lucasrocha.craftai.client.service;
 
-import com.lucasrocha.craftai.client.data.WorldQueryResult;
 import com.lucasrocha.craftai.client.data.MinecraftResourceNames;
+import com.lucasrocha.craftai.client.data.WorldQueryResult;
+import com.lucasrocha.craftai.client.data.WorldQueryTarget;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
+import net.minecraft.core.HolderSet;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.tags.StructureTags;
-import net.minecraft.tags.TagKey;
+import net.minecraft.tags.BiomeTags;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
-import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import org.slf4j.Logger;
 
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 public final class WorldQueryService {
 
     private static final Logger LOGGER = LogUtils.getLogger();
-
-    // Minecraft interprets structure-search radii in chunks, not blocks.
-    private static final int VILLAGE_SEARCH_RADIUS_CHUNKS = 100;
-    private static final int STRONGHOLD_SEARCH_RADIUS_CHUNKS = 200;
     private static final boolean SKIP_KNOWN_STRUCTURES = false;
 
-    // Biome searches use block radii. Larger sampling intervals reduce server-thread work
-    // at the cost of returning an approximate point within the target biome.
-    private static final int DESERT_SEARCH_RADIUS_BLOCKS = 6400;
-    private static final int DESERT_HORIZONTAL_INTERVAL_BLOCKS = 128;
-    private static final int DESERT_VERTICAL_INTERVAL_BLOCKS = 64;
+    private static final int OVERWORLD_BIOME_RADIUS_BLOCKS = 6400;
+    private static final int OVERWORLD_BIOME_HORIZONTAL_INTERVAL_BLOCKS = 256;
+    private static final int OVERWORLD_BIOME_VERTICAL_INTERVAL_BLOCKS = 64;
+    private static final int NETHER_BIOME_RADIUS_BLOCKS = 3200;
+    private static final int NETHER_BIOME_HORIZONTAL_INTERVAL_BLOCKS = 128;
+    private static final int NETHER_BIOME_VERTICAL_INTERVAL_BLOCKS = 32;
+    private static final int END_BIOME_RADIUS_BLOCKS = 6400;
+    private static final int END_BIOME_HORIZONTAL_INTERVAL_BLOCKS = 256;
+    private static final int END_BIOME_VERTICAL_INTERVAL_BLOCKS = 64;
+
+    private static final long CACHE_TTL_NANOS = Duration.ofMinutes(5).toNanos();
+    private static final int CACHE_MAX_PLAYER_MOVEMENT_BLOCKS = 256;
+    private static final Map<MinecraftServer, Map<CacheKey, CachedResult>> CACHE =
+            new WeakHashMap<>();
 
     private WorldQueryService() {}
 
@@ -39,136 +54,107 @@ public final class WorldQueryService {
             MinecraftServer server,
             ServerLevel serverLevel,
             BlockPos playerPosition,
-            WorldQueryResult.Target target
+            WorldQueryTarget target
     ) {
         if (target == null) {
             return CompletableFuture.completedFuture(null);
         }
 
         if (server == null || serverLevel == null || playerPosition == null) {
-            return CompletableFuture.completedFuture(unsupported(target, serverLevel));
+            return CompletableFuture.completedFuture(unsupported(
+                    target,
+                    serverLevel,
+                    "A single-player IntegratedServer, server level, and player position are required."
+            ));
         }
 
-        return switch (target) {
-            case VILLAGE -> findNearestStructureAsync(
+        WorldQueryResult cachedResult = findCached(
+                server,
+                MinecraftResourceNames.dimensionId(serverLevel),
+                playerPosition,
+                target
+        );
+        if (cachedResult != null) {
+            return CompletableFuture.completedFuture(cachedResult);
+        }
+
+        CompletableFuture<WorldQueryResult> searchFuture = switch (target.kind()) {
+            case STRUCTURE -> runOnServerThread(
                     server,
-                    serverLevel,
-                    playerPosition,
                     target,
-                    StructureTags.VILLAGE,
-                    VILLAGE_SEARCH_RADIUS_CHUNKS,
-                    SKIP_KNOWN_STRUCTURES
+                    () -> findNearestStructure(serverLevel, playerPosition, target)
             );
-            case STRONGHOLD -> findNearestStructureAsync(
+            case BIOME -> runOnServerThread(
                     server,
-                    serverLevel,
-                    playerPosition,
                     target,
-                    StructureTags.EYE_OF_ENDER_LOCATED,
-                    STRONGHOLD_SEARCH_RADIUS_CHUNKS,
-                    SKIP_KNOWN_STRUCTURES
-            );
-            case DESERT -> findNearestBiomeAsync(
-                    server,
-                    serverLevel,
-                    playerPosition,
-                    target,
-                    biomeHolder -> biomeHolder.is(Biomes.DESERT),
-                    DESERT_SEARCH_RADIUS_BLOCKS,
-                    DESERT_HORIZONTAL_INTERVAL_BLOCKS,
-                    DESERT_VERTICAL_INTERVAL_BLOCKS
+                    () -> findNearestBiome(serverLevel, playerPosition, target)
             );
         };
+
+        return searchFuture.thenApply(result -> {
+            cacheResult(server, playerPosition, target, result);
+            return result;
+        });
     }
 
     public static WorldQueryResult findNearestStructure(
             ServerLevel serverLevel,
             BlockPos playerPosition,
-            WorldQueryResult.Target target,
-            TagKey<Structure> structureTag,
-            int searchRadiusChunks,
-            boolean skipKnownStructures
+            WorldQueryTarget target
     ) {
         requireSearchInputs(serverLevel, playerPosition, target);
-        if (target.getKind() != WorldQueryResult.Kind.STRUCTURE) {
+        if (target.kind() != WorldQueryResult.Kind.STRUCTURE) {
             throw new IllegalArgumentException("A structure search requires a STRUCTURE target.");
         }
-        if (structureTag == null || searchRadiusChunks <= 0) {
-            throw new IllegalArgumentException("A structure tag and positive search radius are required.");
+
+        Registry<Structure> structureRegistry = serverLevel.registryAccess()
+                .lookupOrThrow(Registries.STRUCTURE);
+        List<Holder<Structure>> registeredStructures = new ArrayList<>();
+
+        for (String registryId : target.registryIds()) {
+            structureRegistry.get(Identifier.parse(registryId))
+                    .ifPresent(registeredStructures::add);
         }
 
-        BlockPos resultPosition = serverLevel.findNearestMapStructure(
-                structureTag,
-                playerPosition,
-                searchRadiusChunks,
-                skipKnownStructures
-        );
-
-        if (resultPosition == null) {
-            return WorldQueryResult.notFound(
-                    target.getKind(),
+        if (registeredStructures.size() != target.registryIds().size()) {
+            return unsupported(
                     target,
-                    MinecraftResourceNames.dimensionId(serverLevel)
+                    serverLevel,
+                    "One or more configured structure registry IDs are unavailable."
             );
         }
 
-        return foundResult(serverLevel, playerPosition, resultPosition, target);
-    }
+        List<Holder<Structure>> dimensionStructures = registeredStructures.stream()
+                .filter(structure -> structure.value().biomes().stream()
+                        .anyMatch(biome -> biomeSupportsDimension(biome, serverLevel.dimension())))
+                .toList();
 
-    public static CompletableFuture<WorldQueryResult> findNearestStructureAsync(
-            MinecraftServer server,
-            ServerLevel serverLevel,
-            BlockPos playerPosition,
-            WorldQueryResult.Target target,
-            TagKey<Structure> structureTag,
-            int searchRadiusChunks,
-            boolean skipKnownStructures
-    ) {
-        return runOnServerThread(
-                server,
-                target,
-                () -> findNearestStructure(
+        if (dimensionStructures.isEmpty()) {
+            return unsupported(
+                    target,
+                    serverLevel,
+                    target.displayName() + " does not generate in the current dimension."
+            );
+        }
+
+        LOGGER.info(
+                "CraftAI: {} structure placement search radius={}",
+                target.identifier(),
+                target.structureSearchRadius()
+        );
+        var result = serverLevel.getChunkSource()
+                .getGenerator()
+                .findNearestMapStructure(
                         serverLevel,
+                        HolderSet.direct(dimensionStructures),
                         playerPosition,
-                        target,
-                        structureTag,
-                        searchRadiusChunks,
-                        skipKnownStructures
-                )
-        );
-    }
-
-    public static WorldQueryResult findNearestBiome(
-            ServerLevel serverLevel,
-            BlockPos playerPosition,
-            WorldQueryResult.Target target,
-            Predicate<Holder<Biome>> biomePredicate,
-            int searchRadiusBlocks,
-            int horizontalIntervalBlocks,
-            int verticalIntervalBlocks
-    ) {
-        requireSearchInputs(serverLevel, playerPosition, target);
-        if (target.getKind() != WorldQueryResult.Kind.BIOME) {
-            throw new IllegalArgumentException("A biome search requires a BIOME target.");
-        }
-        if (biomePredicate == null
-                || searchRadiusBlocks <= 0
-                || horizontalIntervalBlocks <= 0
-                || verticalIntervalBlocks <= 0) {
-            throw new IllegalArgumentException("A biome predicate and positive search settings are required.");
-        }
-
-        var result = serverLevel.findClosestBiome3d(
-                biomePredicate,
-                playerPosition,
-                searchRadiusBlocks,
-                horizontalIntervalBlocks,
-                verticalIntervalBlocks
-        );
+                        target.structureSearchRadius(),
+                        SKIP_KNOWN_STRUCTURES
+                );
 
         if (result == null) {
             return WorldQueryResult.notFound(
-                    target.getKind(),
+                    target.kind(),
                     target,
                     MinecraftResourceNames.dimensionId(serverLevel)
             );
@@ -177,60 +163,84 @@ public final class WorldQueryService {
         return foundResult(serverLevel, playerPosition, result.getFirst(), target);
     }
 
-    public static CompletableFuture<WorldQueryResult> findNearestBiomeAsync(
-            MinecraftServer server,
+    public static WorldQueryResult findNearestBiome(
             ServerLevel serverLevel,
             BlockPos playerPosition,
-            WorldQueryResult.Target target,
-            Predicate<Holder<Biome>> biomePredicate,
-            int searchRadiusBlocks,
-            int horizontalIntervalBlocks,
-            int verticalIntervalBlocks
+            WorldQueryTarget target
     ) {
-        return runOnServerThread(
-                server,
-                target,
-                () -> findNearestBiome(
-                        serverLevel,
-                        playerPosition,
-                        target,
-                        biomePredicate,
-                        searchRadiusBlocks,
-                        horizontalIntervalBlocks,
-                        verticalIntervalBlocks
-                )
+        requireSearchInputs(serverLevel, playerPosition, target);
+        if (target.kind() != WorldQueryResult.Kind.BIOME) {
+            throw new IllegalArgumentException("A biome search requires a BIOME target.");
+        }
+
+        Registry<Biome> biomeRegistry = serverLevel.registryAccess().lookupOrThrow(Registries.BIOME);
+        Identifier targetBiomeId = Identifier.parse(target.registryIds().getFirst());
+        Holder<Biome> targetBiome = biomeRegistry.get(targetBiomeId)
+                .orElse(null);
+
+        if (targetBiome == null) {
+            return unsupported(target, serverLevel, "The configured biome registry ID is unavailable.");
+        }
+
+        if (!biomeSupportsDimension(targetBiome, serverLevel.dimension())) {
+            return unsupported(
+                    target,
+                    serverLevel,
+                    target.displayName() + " does not generate in the current dimension."
+            );
+        }
+
+        BiomeSearchSettings settings = biomeSearchSettings(serverLevel.dimension());
+        LOGGER.info(
+                "CraftAI: {} biome bounds radiusBlocks={}, horizontalIntervalBlocks={}",
+                target.identifier(),
+                settings.radiusBlocks(),
+                settings.horizontalIntervalBlocks()
         );
+        var result = serverLevel.findClosestBiome3d(
+                biome -> biome.is(targetBiomeId),
+                playerPosition,
+                settings.radiusBlocks(),
+                settings.horizontalIntervalBlocks(),
+                settings.verticalIntervalBlocks()
+        );
+
+        if (result == null) {
+            return WorldQueryResult.notFound(
+                    target.kind(),
+                    target,
+                    MinecraftResourceNames.dimensionId(serverLevel)
+            );
+        }
+
+        return foundResult(serverLevel, playerPosition, result.getFirst(), target);
     }
 
     private static CompletableFuture<WorldQueryResult> runOnServerThread(
             MinecraftServer server,
-            WorldQueryResult.Target target,
+            WorldQueryTarget target,
             Supplier<WorldQueryResult> search
     ) {
         CompletableFuture<WorldQueryResult> future = new CompletableFuture<>();
 
-        if (server == null) {
-            future.completeExceptionally(
-                    new IllegalArgumentException("An IntegratedServer is required for world searches.")
-            );
-            return future;
-        }
-
         server.execute(() -> {
             long startedAt = System.nanoTime();
-            LOGGER.info("CraftAI: Running {} search on server thread", target.name().toLowerCase());
+            LOGGER.info(
+                    "CraftAI: Running {} search on server thread",
+                    target.identifier()
+            );
 
             try {
                 WorldQueryResult result = search.get();
                 double durationSeconds = (System.nanoTime() - startedAt) / 1_000_000_000.0;
                 LOGGER.info(
                         "CraftAI: {} search completed in {} seconds",
-                        target.name().toLowerCase(),
-                        String.format("%.2f", durationSeconds)
+                        target.identifier(),
+                        String.format(java.util.Locale.ROOT, "%.2f", durationSeconds)
                 );
                 future.complete(result);
             } catch (Exception error) {
-                LOGGER.error("CraftAI: {} search failed", target.name().toLowerCase(), error);
+                LOGGER.error("CraftAI: {} search failed", target.identifier(), error);
                 future.completeExceptionally(error);
             }
         });
@@ -238,44 +248,155 @@ public final class WorldQueryService {
         return future;
     }
 
+    private static boolean biomeSupportsDimension(
+            Holder<Biome> biome,
+            ResourceKey<Level> dimension
+    ) {
+        if (Level.OVERWORLD.equals(dimension)) {
+            return biome.is(BiomeTags.IS_OVERWORLD);
+        }
+        if (Level.NETHER.equals(dimension)) {
+            return biome.is(BiomeTags.IS_NETHER);
+        }
+        if (Level.END.equals(dimension)) {
+            return biome.is(BiomeTags.IS_END);
+        }
+        return false;
+    }
+
+    private static BiomeSearchSettings biomeSearchSettings(ResourceKey<Level> dimension) {
+        if (Level.NETHER.equals(dimension)) {
+            return new BiomeSearchSettings(
+                    NETHER_BIOME_RADIUS_BLOCKS,
+                    NETHER_BIOME_HORIZONTAL_INTERVAL_BLOCKS,
+                    NETHER_BIOME_VERTICAL_INTERVAL_BLOCKS
+            );
+        }
+        if (Level.END.equals(dimension)) {
+            return new BiomeSearchSettings(
+                    END_BIOME_RADIUS_BLOCKS,
+                    END_BIOME_HORIZONTAL_INTERVAL_BLOCKS,
+                    END_BIOME_VERTICAL_INTERVAL_BLOCKS
+            );
+        }
+        return new BiomeSearchSettings(
+                OVERWORLD_BIOME_RADIUS_BLOCKS,
+                OVERWORLD_BIOME_HORIZONTAL_INTERVAL_BLOCKS,
+                OVERWORLD_BIOME_VERTICAL_INTERVAL_BLOCKS
+        );
+    }
+
     private static WorldQueryResult foundResult(
             ServerLevel serverLevel,
             BlockPos playerPosition,
             BlockPos resultPosition,
-            WorldQueryResult.Target target
+            WorldQueryTarget target
     ) {
-        int distance = (int) Math.round(Math.sqrt(playerPosition.distSqr(resultPosition)));
-
         return WorldQueryResult.found(
-                target.getKind(),
+                target.kind(),
                 target,
                 MinecraftResourceNames.dimensionId(serverLevel),
                 resultPosition.getX(),
                 resultPosition.getZ(),
-                distance
-        );
+                0
+        ).withDistanceFrom(playerPosition.getX(), playerPosition.getZ());
     }
 
     private static WorldQueryResult unsupported(
-            WorldQueryResult.Target target,
-            ServerLevel serverLevel
+            WorldQueryTarget target,
+            ServerLevel serverLevel,
+            String reason
     ) {
         return WorldQueryResult.unsupported(
-                target.getKind(),
+                target.kind(),
                 target,
                 MinecraftResourceNames.dimensionId(serverLevel),
-                "A single-player IntegratedServer, server level, and player position are required."
+                reason
         );
     }
 
     private static void requireSearchInputs(
             ServerLevel serverLevel,
             BlockPos playerPosition,
-            WorldQueryResult.Target target
+            WorldQueryTarget target
     ) {
         if (serverLevel == null || playerPosition == null || target == null) {
             throw new IllegalArgumentException("A server level, player position, and target are required.");
         }
     }
 
+    private static WorldQueryResult findCached(
+            MinecraftServer server,
+            String dimension,
+            BlockPos playerPosition,
+            WorldQueryTarget target
+    ) {
+        synchronized (CACHE) {
+            Map<CacheKey, CachedResult> serverCache = CACHE.get(server);
+            if (serverCache == null) {
+                return null;
+            }
+
+            CacheKey key = new CacheKey(dimension, target.identifier());
+            CachedResult cached = serverCache.get(key);
+            if (cached == null) {
+                return null;
+            }
+
+            long deltaX = cached.origin().getX() - playerPosition.getX();
+            long deltaZ = cached.origin().getZ() - playerPosition.getZ();
+            long movementSquared = deltaX * deltaX + deltaZ * deltaZ;
+            boolean expired = System.nanoTime() >= cached.expiresAtNanos();
+            boolean movedTooFar = movementSquared
+                    > (long) CACHE_MAX_PLAYER_MOVEMENT_BLOCKS * CACHE_MAX_PLAYER_MOVEMENT_BLOCKS;
+
+            if (expired || movedTooFar) {
+                serverCache.remove(key);
+                return null;
+            }
+
+            LOGGER.info("CraftAI: Reusing cached {} result", target.identifier());
+            return cached.result().withDistanceFrom(playerPosition.getX(), playerPosition.getZ());
+        }
+    }
+
+    private static void cacheResult(
+            MinecraftServer server,
+            BlockPos playerPosition,
+            WorldQueryTarget target,
+            WorldQueryResult result
+    ) {
+        if (!result.isReusable()) {
+            return;
+        }
+
+        synchronized (CACHE) {
+            Map<CacheKey, CachedResult> serverCache = CACHE.computeIfAbsent(
+                    server,
+                    ignored -> new HashMap<>()
+            );
+            serverCache.put(
+                    new CacheKey(result.dimension(), target.identifier()),
+                    new CachedResult(
+                            result,
+                            playerPosition.immutable(),
+                            System.nanoTime() + CACHE_TTL_NANOS
+                    )
+            );
+        }
+    }
+
+    private record BiomeSearchSettings(
+            int radiusBlocks,
+            int horizontalIntervalBlocks,
+            int verticalIntervalBlocks
+    ) {}
+
+    private record CacheKey(String dimension, String target) {}
+
+    private record CachedResult(
+            WorldQueryResult result,
+            BlockPos origin,
+            long expiresAtNanos
+    ) {}
 }

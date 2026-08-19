@@ -226,11 +226,13 @@ There is no partial response: the player waits for the world query, Wiki calls, 
 - [x] Nearest village search.
 - [x] Nearest desert-biome search.
 - [x] Nearest stronghold search.
+- [x] All 66 Minecraft 26.2 biome registry targets across their valid vanilla dimensions.
+- [x] All 34 Minecraft 26.2 configured structures, grouped into 21 player-facing structure families.
 - [x] Server-thread scheduling through `CompletableFuture` wrappers.
 - [x] One nearest result by default.
-- [ ] Generic structure-query API.
-- [ ] Generic biome-query API.
-- [ ] Reliable natural-language location intent detection.
+- [x] Generic structure-query API.
+- [x] Generic biome-query API.
+- [x] Deterministic natural-language location intent detection for the supported target catalog.
 - [ ] Programmatic direction guidance.
 
 ### Backend and AI
@@ -244,7 +246,7 @@ There is no partial response: the player waits for the world query, Wiki calls, 
 - [x] Structured 400/500 error responses.
 - [ ] Selective Wiki retrieval.
 - [ ] Limited conversation context.
-- [ ] Automated backend tests.
+- [x] Automated backend tests.
 
 ---
 
@@ -263,8 +265,9 @@ Supported location results use a structured `worldQuery` object with explicit ki
 ### World-query assumptions
 
 - Searches only work when the single-player IntegratedServer is available, which is appropriate for the declared scope.
-- Both searches use `server.overworld()` rather than an explicitly selected search dimension.
-- A search requested while the player is outside the Overworld could therefore produce misleading context unless it is rejected or clearly scoped.
+- Searches use the player's current IntegratedServer dimension and reject targets that do not generate there.
+- Searches do not silently switch dimensions. Players must enter the Overworld, Nether, or End before locating a target in that dimension.
+- `minecraft:the_void` exists in the vanilla biome registry but does not belong to a normal Overworld, Nether, or End generation tag, so a normal-world search reports it as unsupported.
 - Biome searches can be expensive and must remain selectively triggered and server-thread-safe.
 
 ### Intent detection
@@ -416,7 +419,7 @@ The exact syntax may change during implementation, but the payload should move t
   "recipe": null,
   "worldQuery": {
     "kind": "STRUCTURE",
-    "target": "VILLAGE",
+    "target": "minecraft:village",
     "status": "FOUND",
     "dimension": "minecraft:overworld",
     "position": { "x": 944, "z": -288 },
@@ -492,8 +495,8 @@ Implementation notes:
 
 - `WorldQueryService.findNearestAsync(...)` selects the generic structure or biome path from the typed target.
 - Both asynchronous paths use one shared IntegratedServer scheduler and emit start, duration, and failure logs.
-- The caller passes an explicit `ServerLevel`; the current client deliberately passes the Overworld only after checking the player's dimension.
-- Existing search settings remain unchanged: villages use a 100-chunk radius; deserts use a 6,400-block radius with 128-block horizontal and 64-block vertical sampling intervals.
+- The caller passes an explicit `ServerLevel`; Phase 4 later expanded this from the Overworld to the player's current vanilla dimension.
+- Phase 2 retained the earlier village/desert settings. Phase 4 supersedes them with target-aware structure placement bounds and dimension-specific biome sampling.
 - Intent detection remains deliberately unchanged until Phase 3, so noun-only questions such as `What is a village?` are still a known false-positive search case.
 
 Acceptance criteria:
@@ -629,68 +632,62 @@ Acceptance criteria:
 
 Goal: add practical locations through the generic query foundation.
 
-**Status: in progress — first incremental target (stronghold) complete**
+**Status: complete — automated and in-game acceptance passed**
 
-Add one target at a time, with tests and performance checks.
+The original incremental target plan was deliberately broadened by product decision after the stronghold increment passed manual acceptance. The implementation now covers the complete vanilla Minecraft 26.2 biome and configured-structure registries rather than adding each target in a separate change.
 
-Candidate biomes:
+Implemented target catalog:
 
-- Jungle.
-- Snowy Plains.
-- Taiga.
-- Plains.
-- Dark Forest.
-- Flower Forest.
-- Ocean.
-
-Candidate structures:
-
-- Stronghold — first incremental target implemented and accepted.
-- Desert Pyramid.
-- Woodland Mansion.
-- Ocean Monument.
-- Pillager Outpost.
-- Bastion Remnant.
-- Trail Ruins.
+- 66 biome targets, including Overworld, Nether, and End biomes.
+- 34 configured structure registry entries grouped into 21 player-facing families. Variant families such as villages, ruined portals, ocean ruins, shipwrecks, and mineshafts search all applicable configured variants together.
+- Stable `minecraft:` target identifiers shared across Java serialization, TypeScript types, runtime validation, fixtures, and prompt context.
+- Common player terminology such as `desert temple`, `jungle temple`, `bastion`, `fortress`, `witch hut`, `mansion`, `outpost`, and `mushroom island` maps to the authoritative registry-backed target.
 
 Selection rules:
 
-- Prioritize locations players commonly ask for.
-- Ensure the structure or biome is valid for the chosen dimension.
+- Search only the player's current dimension and reject invalid target/dimension combinations before performing an expensive locate operation.
 - Return one nearest result by default.
-- Do not add the full list in one change.
-- Measure expensive biome searches and keep conservative limits.
+- Keep searches on the IntegratedServer thread and network work asynchronous.
+- Use conservative dimension-specific biome sampling, a two-placement-ring bound for random-spread structures, and a 100-ring stronghold bound. Minecraft's search-radius parameter counts placement rings rather than literal chunks.
+- Treat single-target `nearby`, `near me`, `around here`, and `in my world` wording as a search request, but report Minecraft's exact nearest-result distance instead of inventing a subjective nearby threshold.
+- Continue to clarify multi-target comparisons without launching partial or multiple searches.
+- Cache found and bounded not-found results for five minutes while the player remains within 256 blocks of the search origin. Scope cache entries by server session, dimension, and target; recalculate found-result distance from the player's current position on reuse.
 
-Stronghold increment implementation notes:
+Implementation notes:
 
-- `STRONGHOLD` is a typed `STRUCTURE` target across Java serialization, TypeScript types, runtime validation, and prompt context.
-- The IntegratedServer query uses Minecraft's `StructureTags.EYE_OF_ENDER_LOCATED`, verified in Minecraft 26.2 data to contain only `minecraft:stronghold`.
-- The search uses the generic server-thread structure path with one nearest result, a visible 200-chunk radius, and the existing Overworld-only guard.
-- Intent detection recognizes stronghold and strongholds only when paired with tested explicit location language; noun-only questions remain general and nearby phrasing is clarified.
+- Structure searches build direct holder sets from the configured vanilla structure registry IDs, allowing variant families to use the generic `ChunkGenerator.findNearestMapStructure` path.
+- Biome and structure holders are checked against vanilla Overworld, Nether, and End biome tags before searching.
+- A wrong-dimension request returns structured `UNSUPPORTED` context and never silently searches another dimension.
 - Multi-target clarification is now target-neutral so it remains accurate as supported targets expand.
 - Backend validation rejects target/query-kind mismatches rather than accepting malformed structure-versus-biome context.
 
 Automated validation completed:
 
-- The Gradle `intentTest` table passes all 39 cases, including positive, negative, ambiguous, and multi-target stronghold phrasing.
+- The catalog integrity test verifies 66 biome targets, 21 structure families, 87 distinct public targets, and all 100 underlying registry IDs.
+- The Gradle `intentTest` suite passes 192 exhaustive catalog-alias searches plus 52 focused positive, negative, nearby, overlapping-name, and multi-target behavior cases across all three dimensions.
 - Fabric `./gradlew intentTest build` passes.
 - Backend `npm run typecheck` passes.
-- All 10 backend contract and prompt tests pass, including found-stronghold acceptance and target/kind mismatch rejection.
+- All 11 backend contract and prompt tests pass, including full catalog counts, resource-ID serialization, found-result acceptance, and target/kind mismatch rejection.
 
-Manual acceptance results:
+Previously accepted stronghold increment:
 
 - Noun-only and explanatory stronghold questions completed as general questions without launching world searches.
 - Two explicit stronghold requests each launched exactly one server-thread search, returned the same authoritative coordinates, and completed in 0.03 and 0.00 seconds.
-- Nearby and multi-target stronghold phrasing clarified immediately without starting a request or world search.
 - Existing village and desert intent behavior remained correct; the village regression search completed in 0.08 seconds.
 - A Nether stronghold request returned the Overworld-only limitation without invoking `WorldQueryService`.
 - No CraftAI search produced a server-overload warning or noticeable gameplay interruption. The session's single two-second overload warning occurred during initial world loading, several minutes before CraftAI testing.
 
-Future nearby-intent follow-up:
+The expanded catalog and final performance bounds passed in-game acceptance.
 
-- After repeat-query performance safeguards are established, phrases such as `Is there a stronghold nearby?` may be treated as explicit single-target searches.
-- Because `nearby` is subjective, CraftAI should report the nearest authoritative result and exact programmatic distance rather than inventing a universal nearby/not-nearby threshold.
-- Multi-target nearby questions should continue to clarify rather than launching multiple searches.
+Expanded-catalog manual test follow-up:
+
+- Target selection, aliases, dimension scoping, unsupported results, and multi-target clarification worked across the Overworld, Nether, and End.
+- Desert-pyramid retests at radii 300 and 100 each took roughly 18 seconds and blocked the IntegratedServer by 359–367 ticks. Radius 10 still took 8.55–11.75 seconds across two worlds. Inspection showed Minecraft's parameter counts structure-placement rings rather than literal chunks. The accepted two-ring nearby bound completed the same fresh scan in 0.67 seconds without a search-related overload warning; strongholds retain their fast 100-ring path.
+- A 6,400-block desert-biome scan took 3.92 seconds and blocked the server by 81 ticks, so horizontal sampling was doubled to 256 blocks in the Overworld and End and 128 blocks in the Nether.
+- The accepted desert-biome retest completed in 0.07 seconds and still returned authoritative approximate coordinates.
+- Repeated found and not-found searches reused cached results without another world scan. Stopping one IntegratedServer and opening another correctly invalidated the old world's cache.
+- A five-second overload warning during the final session occurred between CraftAI requests while no search was active; the CraftAI searches themselves produced no overload warnings.
+- Singular `end highland` wording initially fell back to a general question, so safe singular forms are now generated and exhaustively covered by the intent suite.
 
 ### Phase 5 — Navigation Assistance
 
@@ -835,7 +832,7 @@ After a successful location query, make the returned coordinates easy to copy fr
 
 ### C. Repeat-query caching for world locations
 
-Cache the last successful structured world result for the active world/session and target. This could make immediate follow-ups cheap. The cache must be invalidated appropriately and must never silently present stale data as a fresh search.
+Implemented in Phase 4: found and bounded not-found results are cached by active server session, dimension, and target for five minutes while the player remains within 256 blocks of the original search position. Reused found results recalculate distance from the current player position.
 
 ### D. Capability-aware fallback answers
 
@@ -959,7 +956,7 @@ When development resumes, use this order:
 6. [x] Complete Phase 3 location-intent detection and manual acceptance.
 7. Add navigation calculations.
 8. Correct recipe extraction before promising inventory-aware crafting answers.
-9. Add new world-query targets one at a time.
+9. [x] Add the full vanilla Minecraft 26.2 biome and structure target catalog; complete expanded in-game acceptance before marking Phase 4 complete.
 10. Add contextual recommendations, multi-step help, and limited conversation context only after the underlying facts are reliable.
 
 This order protects the project's working foundation while making each later feature easier to add and verify.

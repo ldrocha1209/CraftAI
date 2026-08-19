@@ -7,6 +7,7 @@ import com.lucasrocha.craftai.client.data.MinecraftItemData;
 import com.lucasrocha.craftai.client.data.MinecraftRecipeData;
 import com.lucasrocha.craftai.client.data.PlayerContext;
 import com.lucasrocha.craftai.client.data.WorldQueryResult;
+import com.lucasrocha.craftai.client.data.WorldQueryTarget;
 import com.lucasrocha.craftai.client.intent.QueryIntent;
 import com.lucasrocha.craftai.client.intent.QueryIntentDetector;
 import com.lucasrocha.craftai.client.service.CraftAiApi;
@@ -20,9 +21,9 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import org.slf4j.Logger;
 
-import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -52,7 +53,7 @@ public final class AskCommand {
         QueryIntent intent = QueryIntentDetector.detect(question);
 
         if (intent.action() == QueryIntent.Action.AMBIGUOUS) {
-            sendAmbiguousIntentFeedback(source, intent.targetIdentifier());
+            sendAmbiguousIntentFeedback(source, intent.target());
             return 1;
         }
 
@@ -61,13 +62,13 @@ public final class AskCommand {
             return 1;
         }
 
-        WorldQueryResult.Target target = intent.action() == QueryIntent.Action.WORLD_SEARCH
-                ? intent.targetIdentifier()
+        WorldQueryTarget target = intent.action() == QueryIntent.Action.WORLD_SEARCH
+                ? intent.target()
                 : null;
         LOGGER.info(
                 "CraftAI request started (intent={}, worldQueryTarget={})",
                 intent.action(),
-                target == null ? "none" : target.name()
+                target == null ? "none" : target.identifier()
         );
         source.sendFeedback(Component.literal("CraftAI: Thinking..."));
 
@@ -124,7 +125,7 @@ public final class AskCommand {
             MinecraftServer server,
             LocalPlayer player,
             String dimension,
-            WorldQueryResult.Target target
+            WorldQueryTarget target
     ) {
         if (target == null) {
             return CompletableFuture.completedFuture(null);
@@ -132,25 +133,26 @@ public final class AskCommand {
 
         if (player == null || server == null) {
             return CompletableFuture.completedFuture(WorldQueryResult.unsupported(
-                    target.getKind(),
+                    target.kind(),
                     target,
                     dimension,
                     "World search requires a single-player world."
             ));
         }
 
-        if (!"minecraft:overworld".equals(dimension)) {
+        ServerLevel serverLevel = server.getLevel(player.level().dimension());
+        if (serverLevel == null) {
             return CompletableFuture.completedFuture(WorldQueryResult.unsupported(
-                    target.getKind(),
+                    target.kind(),
                     target,
                     dimension,
-                    "World searches currently support the Overworld only."
+                    "The player's current server dimension is unavailable."
             ));
         }
 
         return WorldQueryService.findNearestAsync(
                 server,
-                server.overworld(),
+                serverLevel,
                 player.blockPosition(),
                 target
         );
@@ -158,14 +160,14 @@ public final class AskCommand {
 
     private static void sendAmbiguousIntentFeedback(
             FabricClientCommandSource source,
-            WorldQueryResult.Target target
+            WorldQueryTarget target
     ) {
         String message = target == null
                 ? "CraftAI: I can't compare multiple world locations yet. "
                         + "Please ask about one location at a time."
                 : "CraftAI: I'm not sure whether you want me to search your world. "
                         + "Try asking 'Where is the nearest "
-                        + target.name().toLowerCase(Locale.ROOT)
+                        + target.displayName()
                         + "?'";
         source.sendFeedback(Component.literal(message));
     }
