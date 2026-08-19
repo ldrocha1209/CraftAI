@@ -13,17 +13,44 @@ public class WorldQueryResult {
         UNSUPPORTED
     }
 
+    public enum Direction {
+        NORTH,
+        NORTHEAST,
+        EAST,
+        SOUTHEAST,
+        SOUTH,
+        SOUTHWEST,
+        WEST,
+        NORTHWEST,
+        HERE
+    }
+
     public record Position(
             int x,
             int z
     ) {}
+
+    public record Navigation(
+            int distanceBlocks,
+            int deltaXBlocks,
+            int deltaZBlocks,
+            Direction direction
+    ) {
+        public Navigation {
+            if (distanceBlocks < 0 || direction == null) {
+                throw new IllegalArgumentException(
+                        "Navigation requires a non-negative distance and direction."
+                );
+            }
+        }
+    }
 
     private final Kind kind;
     private final String target;
     private final Status status;
     private final String dimension;
     private final Position position;
-    private final Integer distanceBlocks;
+    private final Navigation navigation;
     private final String reason;
 
     private WorldQueryResult(
@@ -32,15 +59,25 @@ public class WorldQueryResult {
             Status status,
             String dimension,
             Position position,
-            Integer distanceBlocks,
+            Navigation navigation,
             String reason
     ) {
+        if (status == Status.FOUND && (position == null || navigation == null)) {
+            throw new IllegalArgumentException(
+                    "A found world-query result requires position and navigation data."
+            );
+        }
+        if (status != Status.FOUND && (position != null || navigation != null)) {
+            throw new IllegalArgumentException(
+                    "Only a found world-query result may contain position or navigation data."
+            );
+        }
         this.kind = kind;
         this.target = target;
         this.status = status;
         this.dimension = dimension;
         this.position = position;
-        this.distanceBlocks = distanceBlocks;
+        this.navigation = navigation;
         this.reason = reason;
     }
 
@@ -50,7 +87,7 @@ public class WorldQueryResult {
             String dimension,
             int x,
             int z,
-            int distanceBlocks
+            Navigation navigation
     ) {
         return new WorldQueryResult(
                 kind,
@@ -58,7 +95,7 @@ public class WorldQueryResult {
                 Status.FOUND,
                 dimension,
                 new Position(x, z),
-                distanceBlocks,
+                navigation,
                 null
         );
     }
@@ -108,14 +145,10 @@ public class WorldQueryResult {
         return dimension;
     }
 
-    public WorldQueryResult withDistanceFrom(long x, long z) {
+    public WorldQueryResult withNavigation(Navigation updatedNavigation) {
         if (!isFound()) {
             return this;
         }
-
-        long deltaX = position.x() - x;
-        long deltaZ = position.z() - z;
-        int updatedDistance = (int) Math.round(Math.sqrt(deltaX * deltaX + deltaZ * deltaZ));
 
         return new WorldQueryResult(
                 kind,
@@ -123,8 +156,12 @@ public class WorldQueryResult {
                 status,
                 dimension,
                 position,
-                updatedDistance,
+                updatedNavigation,
                 reason
         );
+    }
+
+    public Position position() {
+        return position;
     }
 }

@@ -233,7 +233,7 @@ There is no partial response: the player waits for the world query, Wiki calls, 
 - [x] Generic structure-query API.
 - [x] Generic biome-query API.
 - [x] Deterministic natural-language location intent detection for the supported target catalog.
-- [ ] Programmatic direction guidance.
+- [x] Programmatic distance, axis-offset, and eight-way direction guidance.
 
 ### Backend and AI
 
@@ -423,7 +423,12 @@ The exact syntax may change during implementation, but the payload should move t
     "status": "FOUND",
     "dimension": "minecraft:overworld",
     "position": { "x": 944, "z": -288 },
-    "distanceBlocks": 1200
+    "navigation": {
+      "distanceBlocks": 880,
+      "deltaXBlocks": 844,
+      "deltaZBlocks": -248,
+      "direction": "EAST"
+    }
   }
 }
 ```
@@ -693,6 +698,8 @@ Expanded-catalog manual test follow-up:
 
 Goal: convert authoritative coordinates into immediately useful travel guidance.
 
+**Status: complete — automated and in-game acceptance passed**
+
 Tasks:
 
 - Calculate horizontal distance in code.
@@ -707,6 +714,31 @@ The nearest village is about 1,200 blocks northeast of you, near X: 944, Z: -288
 ```
 
 The AI must not independently recalculate, alter, or invent coordinates.
+
+Implementation notes:
+
+- `NavigationService` calculates rounded horizontal distance, signed X/Z offsets, and `NORTH`, `NORTHEAST`, `EAST`, `SOUTHEAST`, `SOUTH`, `SOUTHWEST`, `WEST`, `NORTHWEST`, or `HERE` from authoritative Minecraft coordinates.
+- Positive X means east, negative X west, positive Z south, and negative Z north.
+- Found results carry a structured `navigation` object; not-found and unsupported results cannot carry coordinates or navigation.
+- Backend validation rejects navigation that conflicts with the supplied player and destination positions, including the replaced legacy top-level distance field.
+- Cached found results recalculate navigation from the player's current position; cached not-found results remain reusable without accessing absent coordinates.
+- Player context and world searches use the same floored Minecraft block position. This avoids one-block navigation inconsistencies at negative fractional coordinates.
+- Prompt rules require the AI to explain supplied navigation facts without recalculating or contradicting them.
+
+Automated validation completed:
+
+- `NavigationServiceTest` passes 15 distance, offset, compass-sector, boundary, same-position, and negative-coordinate cases.
+- The existing 192 alias and 52 intent behavior cases still pass.
+- Fabric `./gradlew navigationTest intentTest build` passes.
+- Backend `npm run typecheck` and all 15 contract, navigation-consistency, prompt, and regression tests pass.
+
+Manual acceptance results:
+
+- A fresh stronghold lookup completed in 0.04 seconds and returned exact coordinates plus deterministic distance, X/Z offsets, and natural direction guidance.
+- Repeating the stronghold request reused the cached destination and returned consistent recalculated navigation without another world scan.
+- A bounded desert-pyramid not-found result omitted coordinates and navigation instead of inventing travel guidance.
+- Negative-coordinate player context passed the backend consistency boundary after both context collection and world search were aligned to Minecraft's floored block position.
+- No HTTP 400 responses, CraftAI exceptions, or failed requests occurred in the accepted session.
 
 ### Phase 6 — Reliable Recipe and Inventory Reasoning
 

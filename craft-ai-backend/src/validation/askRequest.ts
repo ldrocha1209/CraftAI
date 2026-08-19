@@ -2,10 +2,12 @@ import type {
     AskRequest,
     MatchedItem,
     MinecraftRecipe,
+    NavigationDirection,
     PlayerContext,
     PlayerEquipment,
     PlayerPosition,
     WorldQueryKind,
+    WorldQueryNavigation,
     WorldQueryPosition,
     WorldQueryResult,
     WorldQueryStatus,
@@ -31,7 +33,7 @@ export function parseAskRequest(value: unknown): AskRequest {
     const player = parsePlayerContext(body.player, issues);
     const matchedItem = parseOptionalMatchedItem(body.matchedItem, issues);
     const recipe = parseOptionalRecipe(body.recipe, issues);
-    const worldQuery = parseOptionalWorldQuery(body.worldQuery, issues);
+    const worldQuery = parseOptionalWorldQuery(body.worldQuery, player.position, issues);
 
     if (issues.length > 0) {
         throw new RequestValidationError(issues);
@@ -131,6 +133,7 @@ function parseOptionalRecipe(
 
 function parseOptionalWorldQuery(
     value: unknown,
+    playerPosition: PlayerPosition | undefined,
     issues: string[]
 ): WorldQueryResult | undefined {
     if (value === undefined || value === null) {
@@ -164,7 +167,7 @@ function parseOptionalWorldQuery(
     }
 
     let position: WorldQueryPosition | undefined;
-    let distanceBlocks: number | undefined;
+    let navigation: WorldQueryNavigation | undefined;
 
     if (status === "FOUND") {
         const rawPosition = readRecord(query.position, "worldQuery.position", issues);
@@ -172,10 +175,20 @@ function parseOptionalWorldQuery(
             x: readInteger(rawPosition.x, "worldQuery.position.x", issues),
             z: readInteger(rawPosition.z, "worldQuery.position.z", issues)
         };
-        distanceBlocks = readNonNegativeInteger(
-            query.distanceBlocks,
-            "worldQuery.distanceBlocks",
-            issues
+        navigation = parseWorldQueryNavigation(query.navigation, issues);
+        validateNavigationConsistency(position, navigation, playerPosition, issues);
+    } else {
+        if (query.position !== undefined && query.position !== null) {
+            issues.push("worldQuery.position is only allowed for a FOUND result.");
+        }
+        if (query.navigation !== undefined && query.navigation !== null) {
+            issues.push("worldQuery.navigation is only allowed for a FOUND result.");
+        }
+    }
+
+    if (query.distanceBlocks !== undefined) {
+        issues.push(
+            "worldQuery.distanceBlocks was replaced by worldQuery.navigation.distanceBlocks."
         );
     }
 
@@ -187,9 +200,89 @@ function parseOptionalWorldQuery(
         status,
         dimension,
         ...(position ? { position } : {}),
-        ...(distanceBlocks !== undefined ? { distanceBlocks } : {}),
+        ...(navigation ? { navigation } : {}),
         ...(reason ? { reason } : {})
     };
+}
+
+function parseWorldQueryNavigation(
+    value: unknown,
+    issues: string[]
+): WorldQueryNavigation {
+    const navigation = readRecord(value, "worldQuery.navigation", issues);
+    return {
+        distanceBlocks: readNonNegativeInteger(
+            navigation.distanceBlocks,
+            "worldQuery.navigation.distanceBlocks",
+            issues
+        ),
+        deltaXBlocks: readInteger(
+            navigation.deltaXBlocks,
+            "worldQuery.navigation.deltaXBlocks",
+            issues
+        ),
+        deltaZBlocks: readInteger(
+            navigation.deltaZBlocks,
+            "worldQuery.navigation.deltaZBlocks",
+            issues
+        ),
+        direction: readEnum(
+            navigation.direction,
+            "worldQuery.navigation.direction",
+            [
+                "NORTH", "NORTHEAST", "EAST", "SOUTHEAST", "SOUTH",
+                "SOUTHWEST", "WEST", "NORTHWEST", "HERE"
+            ] as const,
+            issues
+        ) as NavigationDirection
+    };
+}
+
+function validateNavigationConsistency(
+    destination: WorldQueryPosition,
+    navigation: WorldQueryNavigation,
+    playerPosition: PlayerPosition | undefined,
+    issues: string[]
+): void {
+    if (!playerPosition) {
+        return;
+    }
+
+    const expectedDeltaX = destination.x - playerPosition.x;
+    const expectedDeltaZ = destination.z - playerPosition.z;
+    const expectedDistance = Math.round(Math.hypot(expectedDeltaX, expectedDeltaZ));
+    const expectedDirection = navigationDirection(expectedDeltaX, expectedDeltaZ);
+
+    if (navigation.deltaXBlocks !== expectedDeltaX) {
+        issues.push("worldQuery.navigation.deltaXBlocks does not match the supplied positions.");
+    }
+    if (navigation.deltaZBlocks !== expectedDeltaZ) {
+        issues.push("worldQuery.navigation.deltaZBlocks does not match the supplied positions.");
+    }
+    if (navigation.distanceBlocks !== expectedDistance) {
+        issues.push("worldQuery.navigation.distanceBlocks does not match the supplied positions.");
+    }
+    if (navigation.direction !== expectedDirection) {
+        issues.push("worldQuery.navigation.direction does not match the supplied positions.");
+    }
+}
+
+function navigationDirection(deltaX: number, deltaZ: number): NavigationDirection {
+    if (deltaX === 0 && deltaZ === 0) {
+        return "HERE";
+    }
+
+    const directions: readonly NavigationDirection[] = [
+        "EAST", "SOUTHEAST", "SOUTH", "SOUTHWEST",
+        "WEST", "NORTHWEST", "NORTH", "NORTHEAST"
+    ];
+    const octantRadians = Math.PI / 4;
+    const angle = Math.atan2(deltaZ, deltaX);
+    const clockwiseAngle = (angle + Math.PI * 2) % (Math.PI * 2);
+    const octant = Math.floor(
+        (clockwiseAngle + octantRadians / 2) / octantRadians
+    ) % directions.length;
+    return directions[octant];
 }
 
 function readRecord(

@@ -298,8 +298,13 @@ public final class WorldQueryService {
                 MinecraftResourceNames.dimensionId(serverLevel),
                 resultPosition.getX(),
                 resultPosition.getZ(),
-                0
-        ).withDistanceFrom(playerPosition.getX(), playerPosition.getZ());
+                NavigationService.calculate(
+                        playerPosition.getX(),
+                        playerPosition.getZ(),
+                        resultPosition.getX(),
+                        resultPosition.getZ()
+                )
+        );
     }
 
     private static WorldQueryResult unsupported(
@@ -356,7 +361,16 @@ public final class WorldQueryService {
             }
 
             LOGGER.info("CraftAI: Reusing cached {} result", target.identifier());
-            return cached.result().withDistanceFrom(playerPosition.getX(), playerPosition.getZ());
+            if (!cached.result().isFound()) {
+                return cached.result();
+            }
+            WorldQueryResult.Position destination = cached.result().position();
+            return cached.result().withNavigation(NavigationService.calculate(
+                    playerPosition.getX(),
+                    playerPosition.getZ(),
+                    destination.x(),
+                    destination.z()
+            ));
         }
     }
 

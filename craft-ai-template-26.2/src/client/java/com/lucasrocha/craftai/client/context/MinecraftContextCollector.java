@@ -4,6 +4,7 @@ import com.lucasrocha.craftai.client.data.MinecraftResourceNames;
 import com.lucasrocha.craftai.client.data.PlayerContext;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 
@@ -61,11 +62,8 @@ public final class MinecraftContextCollector {
             return null;
         }
 
-        return new PlayerContext.Position(
-                Math.round(player.getX()),
-                Math.round(player.getY()),
-                Math.round(player.getZ())
-        );
+        BlockPos position = player.blockPosition();
+        return new PlayerContext.Position(position.getX(), position.getY(), position.getZ());
     }
 
     private static Map<String, Integer> collectInventory(LocalPlayer player) {

@@ -27,7 +27,12 @@ test("accepts the representative Java request contract", () => {
     );
     assert.deepEqual(request.player.position, { x: 100, y: 64, z: -40 });
     assert.equal(request.worldQuery?.target, "minecraft:village");
-    assert.equal(request.worldQuery?.distanceBlocks, 878);
+    assert.deepEqual(request.worldQuery?.navigation, {
+        distanceBlocks: 880,
+        deltaXBlocks: 844,
+        deltaZBlocks: -248,
+        direction: "EAST"
+    });
     assert.deepEqual(request.recipe?.ingredients, { "minecraft:oak_log": 1 });
 });
 
@@ -86,7 +91,7 @@ test("accepts a structured not-found world search without coordinates", () => {
 
     assert.equal(request.worldQuery?.status, "NOT_FOUND");
     assert.equal(request.worldQuery?.position, undefined);
-    assert.equal(request.worldQuery?.distanceBlocks, undefined);
+    assert.equal(request.worldQuery?.navigation, undefined);
 });
 
 test("accepts a found stronghold search as structured world context", () => {
@@ -99,7 +104,12 @@ test("accepts a found stronghold search as structured world context", () => {
             status: "FOUND",
             dimension: "minecraft:overworld",
             position: { x: -1248, z: 2112 },
-            distanceBlocks: 2481
+            navigation: {
+                distanceBlocks: 2539,
+                deltaXBlocks: -1348,
+                deltaZBlocks: 2152,
+                direction: "SOUTHWEST"
+            }
         }
     });
 
@@ -109,6 +119,7 @@ test("accepts a found stronghold search as structured world context", () => {
     const prompt = buildCraftAiPrompt(request, null);
     assert.match(prompt, /"target": "minecraft:stronghold"/);
     assert.match(prompt, /"x": -1248/);
+    assert.match(prompt, /"direction": "SOUTHWEST"/);
 });
 
 test("rejects a world-query target with the wrong query kind", () => {
@@ -144,7 +155,7 @@ test("rejects a blank question and malformed player context", () => {
     );
 });
 
-test("requires coordinates and distance for a found world search", () => {
+test("requires coordinates and deterministic navigation for a found world search", () => {
     assert.throws(
         () => parseAskRequest({
             ...(fixture as object),
@@ -168,14 +179,138 @@ test("labels desert data by its structured target instead of as a village", () =
             status: "FOUND",
             dimension: "minecraft:overworld",
             position: { x: 6068, z: 2738 },
-            distanceBlocks: 6258
+            navigation: {
+                distanceBlocks: 6583,
+                deltaXBlocks: 5968,
+                deltaZBlocks: 2778,
+                direction: "SOUTHEAST"
+            }
         }
     });
 
     const prompt = buildCraftAiPrompt(request, null);
 
     assert.match(prompt, /"target": "minecraft:desert"/);
+    assert.match(prompt, /"distanceBlocks": 6583/);
     assert.doesNotMatch(prompt, /Village search:/);
+});
+
+test("rejects navigation facts that conflict with supplied positions", () => {
+    assert.throws(
+        () => parseAskRequest({
+            ...(fixture as object),
+            worldQuery: {
+                kind: "STRUCTURE",
+                target: "minecraft:village",
+                status: "FOUND",
+                dimension: "minecraft:overworld",
+                position: { x: 944, z: -288 },
+                navigation: {
+                    distanceBlocks: 1200,
+                    deltaXBlocks: -844,
+                    deltaZBlocks: 248,
+                    direction: "WEST"
+                }
+            }
+        }),
+        (error: unknown) => {
+            assert.ok(error instanceof RequestValidationError);
+            assert.ok(error.issues.includes(
+                "worldQuery.navigation.direction does not match the supplied positions."
+            ));
+            assert.ok(error.issues.includes(
+                "worldQuery.navigation.distanceBlocks does not match the supplied positions."
+            ));
+            return true;
+        }
+    );
+});
+
+test("rejects the replaced top-level distance field", () => {
+    assert.throws(
+        () => parseAskRequest({
+            ...(fixture as object),
+            worldQuery: {
+                kind: "STRUCTURE",
+                target: "minecraft:village",
+                status: "FOUND",
+                dimension: "minecraft:overworld",
+                position: { x: 944, z: -288 },
+                navigation: {
+                    distanceBlocks: 880,
+                    deltaXBlocks: 844,
+                    deltaZBlocks: -248,
+                    direction: "EAST"
+                },
+                distanceBlocks: 880
+            }
+        }),
+        RequestValidationError
+    );
+});
+
+test("accepts all deterministic compass directions and the same-position case", () => {
+    const directions = [
+        { x: 0, z: -10, distance: 10, direction: "NORTH" },
+        { x: 10, z: -10, distance: 14, direction: "NORTHEAST" },
+        { x: 10, z: 0, distance: 10, direction: "EAST" },
+        { x: 10, z: 10, distance: 14, direction: "SOUTHEAST" },
+        { x: 0, z: 10, distance: 10, direction: "SOUTH" },
+        { x: -10, z: 10, distance: 14, direction: "SOUTHWEST" },
+        { x: -10, z: 0, distance: 10, direction: "WEST" },
+        { x: -10, z: -10, distance: 14, direction: "NORTHWEST" },
+        { x: 0, z: 0, distance: 0, direction: "HERE" }
+    ] as const;
+
+    for (const testCase of directions) {
+        const request = parseAskRequest({
+            ...(fixture as object),
+            player: {
+                ...((fixture as { player: object }).player),
+                position: { x: 0, y: 64, z: 0 }
+            },
+            worldQuery: {
+                kind: "STRUCTURE",
+                target: "minecraft:village",
+                status: "FOUND",
+                dimension: "minecraft:overworld",
+                position: { x: testCase.x, z: testCase.z },
+                navigation: {
+                    distanceBlocks: testCase.distance,
+                    deltaXBlocks: testCase.x,
+                    deltaZBlocks: testCase.z,
+                    direction: testCase.direction
+                }
+            }
+        });
+        assert.equal(request.worldQuery?.navigation?.direction, testCase.direction);
+    }
+});
+
+test("accepts navigation from floored negative Minecraft block coordinates", () => {
+    const request = parseAskRequest({
+        ...(fixture as object),
+        player: {
+            ...((fixture as { player: object }).player),
+            position: { x: -17, y: 73, z: -34 }
+        },
+        worldQuery: {
+            kind: "STRUCTURE",
+            target: "minecraft:stronghold",
+            status: "FOUND",
+            dimension: "minecraft:overworld",
+            position: { x: -272, z: -1488 },
+            navigation: {
+                distanceBlocks: 1476,
+                deltaXBlocks: -255,
+                deltaZBlocks: -1454,
+                direction: "NORTH"
+            }
+        }
+    });
+
+    assert.equal(request.worldQuery?.navigation?.distanceBlocks, 1476);
+    assert.equal(request.worldQuery?.navigation?.direction, "NORTH");
 });
 
 test("catalogs every supported biome and structure target", () => {
