@@ -1,5 +1,6 @@
 {
   "question": "Where is the nearest village, and can I craft oak planks?",
+  "assistanceMode": "GENERAL",
   "player": {
     "gameMode": "SURVIVAL",
     "biome": "minecraft:plains",
@@ -67,5 +68,9 @@
       "deltaZBlocks": -248,
       "direction": "EAST"
     }
+  },
+  "conversation": {
+    "followUp": false,
+    "recentTurns": []
   }
 }

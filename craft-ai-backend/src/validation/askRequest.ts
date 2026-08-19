@@ -1,11 +1,15 @@
 import type {
+    AssistanceMode,
     AskRequest,
+    ConversationContext,
+    ConversationTurn,
     MatchedItem,
     MinecraftRecipe,
     NavigationDirection,
     PlayerContext,
     PlayerEquipment,
     PlayerPosition,
+    ReferencedDestination,
     WorldQueryKind,
     WorldQueryNavigation,
     WorldQueryPosition,
@@ -30,6 +34,12 @@ export function parseAskRequest(value: unknown): AskRequest {
     const body = readRecord(value, "body", issues);
 
     const question = readString(body.question, "question", issues, true);
+    const assistanceMode = readEnum(
+        body.assistanceMode,
+        "assistanceMode",
+        ["GENERAL", "RECOMMENDATION", "GOAL_PLAN"] as const,
+        issues
+    ) as AssistanceMode;
     const player = parsePlayerContext(body.player, issues);
     const matchedItem = parseOptionalMatchedItem(body.matchedItem, issues);
     const recipe = parseOptionalRecipe(
@@ -39,6 +49,7 @@ export function parseAskRequest(value: unknown): AskRequest {
         issues
     );
     const worldQuery = parseOptionalWorldQuery(body.worldQuery, player.position, issues);
+    const conversation = parseConversationContext(body.conversation, player, issues);
 
     if (issues.length > 0) {
         throw new RequestValidationError(issues);
@@ -46,10 +57,165 @@ export function parseAskRequest(value: unknown): AskRequest {
 
     return {
         question,
+        assistanceMode,
         player,
         ...(matchedItem ? { matchedItem } : {}),
         ...(recipe ? { recipe } : {}),
-        ...(worldQuery ? { worldQuery } : {})
+        ...(worldQuery ? { worldQuery } : {}),
+        conversation
+    };
+}
+
+function parseConversationContext(
+    value: unknown,
+    player: PlayerContext,
+    issues: string[]
+): ConversationContext {
+    const conversation = readRecord(value, "conversation", issues);
+    const followUp = readBoolean(conversation.followUp, "conversation.followUp", issues);
+    const recentTurns = readArray(
+        conversation.recentTurns,
+        "conversation.recentTurns",
+        issues
+    ).map((turn, index) => parseConversationTurn(turn, index, issues));
+
+    if (recentTurns.length > 3) {
+        issues.push("conversation.recentTurns must contain at most 3 turns.");
+    }
+
+    const lastDestination = parseOptionalReferencedDestination(
+        conversation.lastDestination,
+        player,
+        issues
+    );
+
+    if (!followUp && (recentTurns.length > 0 || lastDestination)) {
+        issues.push("Non-follow-up requests must not include conversation history.");
+    }
+    if (followUp && recentTurns.length === 0) {
+        issues.push("A follow-up request requires at least one recent turn.");
+    }
+
+    return {
+        followUp,
+        recentTurns,
+        ...(lastDestination ? { lastDestination } : {})
+    };
+}
+
+function parseConversationTurn(
+    value: unknown,
+    index: number,
+    issues: string[]
+): ConversationTurn {
+    const path = `conversation.recentTurns[${index}]`;
+    const turn = readRecord(value, path, issues);
+    return {
+        question: readBoundedString(turn.question, `${path}.question`, 300, issues),
+        answer: readBoundedString(turn.answer, `${path}.answer`, 1_200, issues)
+    };
+}
+
+function parseOptionalReferencedDestination(
+    value: unknown,
+    player: PlayerContext,
+    issues: string[]
+): ReferencedDestination | undefined {
+    if (value === undefined || value === null) {
+        return undefined;
+    }
+
+    const destination = readRecord(value, "conversation.lastDestination", issues);
+    const kind = readEnum(
+        destination.kind,
+        "conversation.lastDestination.kind",
+        ["STRUCTURE", "BIOME"] as const,
+        issues
+    ) as WorldQueryKind;
+    const target = readEnum(
+        destination.target,
+        "conversation.lastDestination.target",
+        WORLD_QUERY_TARGETS,
+        issues
+    ) as WorldQueryTarget;
+    const dimension = readString(
+        destination.dimension,
+        "conversation.lastDestination.dimension",
+        issues
+    );
+    const rawPosition = readRecord(
+        destination.position,
+        "conversation.lastDestination.position",
+        issues
+    );
+    const position: WorldQueryPosition = {
+        x: readInteger(rawPosition.x, "conversation.lastDestination.position.x", issues),
+        z: readInteger(rawPosition.z, "conversation.lastDestination.position.z", issues)
+    };
+    const ageSeconds = readNonNegativeInteger(
+        destination.ageSeconds,
+        "conversation.lastDestination.ageSeconds",
+        issues
+    );
+    const sameDimension = readBoolean(
+        destination.sameDimension,
+        "conversation.lastDestination.sameDimension",
+        issues
+    );
+
+    if (kind !== worldQueryKindForTarget(target)) {
+        issues.push(
+            `conversation.lastDestination.kind must be ${worldQueryKindForTarget(target)} `
+            + `for target ${target}.`
+        );
+    }
+    if (ageSeconds > 600) {
+        issues.push("conversation.lastDestination.ageSeconds must not exceed 600.");
+    }
+
+    const expectedSameDimension = dimension === player.dimension;
+    if (sameDimension !== expectedSameDimension) {
+        issues.push(
+            "conversation.lastDestination.sameDimension does not match the supplied dimensions."
+        );
+    }
+
+    let navigation: WorldQueryNavigation | undefined;
+    if (destination.navigation !== undefined && destination.navigation !== null) {
+        navigation = parseWorldQueryNavigation(destination.navigation, issues);
+        validateNavigationConsistency(
+            position,
+            navigation,
+            player.position,
+            "conversation.lastDestination.navigation",
+            issues
+        );
+    }
+    if (!sameDimension && navigation) {
+        issues.push(
+            "conversation.lastDestination.navigation is not allowed across dimensions."
+        );
+    }
+    if (sameDimension && player.position && !navigation) {
+        issues.push(
+            "conversation.lastDestination.navigation is required in the player's dimension."
+        );
+    }
+
+    return {
+        sourceQuestion: readBoundedString(
+            destination.sourceQuestion,
+            "conversation.lastDestination.sourceQuestion",
+            300,
+            issues
+        ),
+        kind,
+        target,
+        dimension,
+        position,
+        ...(navigation ? { navigation } : {}),
+        ageSeconds,
+        sameDimension
     };
 }
 
@@ -315,7 +481,13 @@ function parseOptionalWorldQuery(
             z: readInteger(rawPosition.z, "worldQuery.position.z", issues)
         };
         navigation = parseWorldQueryNavigation(query.navigation, issues);
-        validateNavigationConsistency(position, navigation, playerPosition, issues);
+        validateNavigationConsistency(
+            position,
+            navigation,
+            playerPosition,
+            "worldQuery.navigation",
+            issues
+        );
     } else {
         if (query.position !== undefined && query.position !== null) {
             issues.push("worldQuery.position is only allowed for a FOUND result.");
@@ -381,6 +553,7 @@ function validateNavigationConsistency(
     destination: WorldQueryPosition,
     navigation: WorldQueryNavigation,
     playerPosition: PlayerPosition | undefined,
+    path: string,
     issues: string[]
 ): void {
     if (!playerPosition) {
@@ -393,16 +566,16 @@ function validateNavigationConsistency(
     const expectedDirection = navigationDirection(expectedDeltaX, expectedDeltaZ);
 
     if (navigation.deltaXBlocks !== expectedDeltaX) {
-        issues.push("worldQuery.navigation.deltaXBlocks does not match the supplied positions.");
+        issues.push(`${path}.deltaXBlocks does not match the supplied positions.`);
     }
     if (navigation.deltaZBlocks !== expectedDeltaZ) {
-        issues.push("worldQuery.navigation.deltaZBlocks does not match the supplied positions.");
+        issues.push(`${path}.deltaZBlocks does not match the supplied positions.`);
     }
     if (navigation.distanceBlocks !== expectedDistance) {
-        issues.push("worldQuery.navigation.distanceBlocks does not match the supplied positions.");
+        issues.push(`${path}.distanceBlocks does not match the supplied positions.`);
     }
     if (navigation.direction !== expectedDirection) {
-        issues.push("worldQuery.navigation.direction does not match the supplied positions.");
+        issues.push(`${path}.direction does not match the supplied positions.`);
     }
 }
 
@@ -453,6 +626,19 @@ function readString(
     }
 
     return value;
+}
+
+function readBoundedString(
+    value: unknown,
+    path: string,
+    maxLength: number,
+    issues: string[]
+): string {
+    const string = readString(value, path, issues, true);
+    if (string.length > maxLength) {
+        issues.push(`${path} must not exceed ${maxLength} characters.`);
+    }
+    return string;
 }
 
 function readOptionalString(

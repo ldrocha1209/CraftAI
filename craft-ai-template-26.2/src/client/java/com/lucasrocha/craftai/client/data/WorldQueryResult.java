@@ -137,6 +137,14 @@ public class WorldQueryResult {
         return status == Status.FOUND && position != null;
     }
 
+    public Kind kind() {
+        return kind;
+    }
+
+    public String target() {
+        return target;
+    }
+
     public boolean isReusable() {
         return status == Status.FOUND || status == Status.NOT_FOUND;
     }

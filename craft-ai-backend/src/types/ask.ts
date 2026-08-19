@@ -52,6 +52,8 @@ export interface MinecraftRecipe {
     totalMissing: number;
 }
 
+export type AssistanceMode = "GENERAL" | "RECOMMENDATION" | "GOAL_PLAN";
+
 export type WorldQueryKind = "STRUCTURE" | "BIOME";
 export type WorldQueryStatus = "FOUND" | "NOT_FOUND" | "UNSUPPORTED";
 export type NavigationDirection =
@@ -87,12 +89,36 @@ export interface WorldQueryResult {
     reason?: string;
 }
 
+export interface ConversationTurn {
+    question: string;
+    answer: string;
+}
+
+export interface ReferencedDestination {
+    sourceQuestion: string;
+    kind: WorldQueryKind;
+    target: WorldQueryTarget;
+    dimension: string;
+    position: WorldQueryPosition;
+    navigation?: WorldQueryNavigation;
+    ageSeconds: number;
+    sameDimension: boolean;
+}
+
+export interface ConversationContext {
+    followUp: boolean;
+    recentTurns: ConversationTurn[];
+    lastDestination?: ReferencedDestination;
+}
+
 export interface AskRequest {
     question: string;
+    assistanceMode: AssistanceMode;
     player: PlayerContext;
     matchedItem?: MatchedItem;
     recipe?: MinecraftRecipe;
     worldQuery?: WorldQueryResult;
+    conversation: ConversationContext;
 }
 
 export interface AskResponse {

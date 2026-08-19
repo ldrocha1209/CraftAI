@@ -25,6 +25,7 @@ loom {
 sourceSets {
 	intentTest {
 		compileClasspath += sourceSets.client.output
+		compileClasspath += sourceSets.client.compileClasspath
 		runtimeClasspath += output + compileClasspath
 	}
 }
@@ -75,10 +76,19 @@ tasks.register("craftingTest", JavaExec) {
 	mainClass = "com.lucasrocha.craftai.client.service.CraftingAnalysisServiceTest"
 }
 
+tasks.register("assistanceContextTest", JavaExec) {
+	group = "verification"
+	description = "Runs recommendation, planning, and bounded conversation-context tests."
+	dependsOn intentTestClasses
+	classpath = sourceSets.intentTest.runtimeClasspath
+	mainClass = "com.lucasrocha.craftai.client.service.AssistanceContextTest"
+}
+
 tasks.named("check") {
 	dependsOn intentTest
 	dependsOn navigationTest
 	dependsOn craftingTest
+	dependsOn assistanceContextTest
 }
 
 java {

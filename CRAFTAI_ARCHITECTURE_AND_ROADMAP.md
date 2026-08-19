@@ -145,7 +145,7 @@ There is currently:
 
 - No WebSocket or streaming response.
 - Matching Java and TypeScript request models that are manually maintained and protected by a representative contract fixture; there is no generated shared schema.
-- No conversation identifier or persistent session state.
+- No conversation identifier, database, or persistent conversation state. A bounded client-side session context keeps at most three successful turns and one recent structured destination for up to ten minutes in the active single-player server instance.
 - No Fabric-specific network protocol between the projects.
 - No backend authentication.
 - One complete, independent context payload per `/ask` request.
@@ -168,7 +168,7 @@ There is currently:
 2. `CraftAiClient` reads the question.
 3. `MinecraftDataService.findItemInQuestion()` scans the Minecraft item registry and chooses the longest item-name substring found in the question.
 4. If an item is found, `MinecraftDataService.findRecipe()` matches synchronized shaped and shapeless crafting displays by actual output and deterministically compares their requirements with the aggregated inventory.
-5. `QueryIntentDetector` classifies the question as a general question, explicit world search, or ambiguous request and selects a supported typed target only for explicit location language.
+5. `QueryIntentDetector` independently classifies world-search intent, while `AssistanceIntentDetector` classifies general, recommendation, and explicit goal-planning requests plus conservative follow-up wording.
 6. When required and an IntegratedServer is present, `WorldQueryService` schedules the search on the server thread and exposes the result through a `CompletableFuture`.
 7. The client collects the current player context:
    - Game mode.
@@ -180,17 +180,18 @@ There is currently:
    - Main-hand and off-hand items.
    - Helmet, chestplate, leggings, and boots.
 8. The collected values are placed in a nested `PlayerContext` containing numeric position and structured equipment data.
-9. An `AtomicBoolean` allows only one backend request at a time.
-10. After any world search completes, `CraftAiApi` serializes one typed `CraftAiRequest` through Gson and sends it to the configured backend `/ask` endpoint with a 60-second client timeout.
-11. The Express route validates and reconstructs the request through `parseAskRequest()`. Invalid payloads receive a structured HTTP 400 response before any external request is made.
-12. `wikiService` performs up to two sequential requests:
+9. `ConversationContextService` supplies history only for detected follow-ups, recalculates navigation to a recent referenced destination from the current position, and resets bounded state when the single-player server instance changes or ten minutes elapse.
+10. An `AtomicBoolean` allows only one backend request at a time.
+11. After any world search completes, `CraftAiApi` serializes one typed `CraftAiRequest` through Gson and sends it to the configured backend `/ask` endpoint with a 60-second client timeout.
+12. The Express route validates and reconstructs the request through `parseAskRequest()`. Invalid payloads receive a structured HTTP 400 response before any external request is made.
+13. `wikiService` performs up to two sequential requests:
     - Search for the most relevant page.
     - Retrieve its plain-text extract, truncated to 12,000 characters.
-13. The route passes the typed request object and Wiki text to `generateAnswer()`.
-14. A pure prompt builder interpolates the question, nested player context, structured world-search result, item/recipe data, Wiki extract, and behavior rules into one prompt.
-15. The backend calls the OpenAI Responses API and returns `response.output_text` as `{ "answer": "..." }`.
-16. Java parses the answer, schedules chat output on Minecraft's client thread, and releases the in-progress flag.
-17. Any asynchronous failure produces a generic in-game failure message and prints the Java exception.
+14. The route passes the typed request object and Wiki text to `generateAnswer()`.
+15. A pure prompt builder interpolates the question, request purpose, bounded conversation reference, nested player context, structured world-search result, item/recipe data, Wiki extract, and behavior rules into one prompt.
+16. The backend calls the OpenAI Responses API and returns `response.output_text` as `{ "answer": "..." }`.
+17. On success, Java records the bounded turn and any found destination, schedules chat output on Minecraft's client thread, and releases the in-progress flag. Failed requests are not stored.
+18. Any asynchronous failure produces a generic in-game failure message and prints the Java exception.
 
 There is no partial response: the player waits for the world query, Wiki calls, and complete AI response before seeing the answer.
 
@@ -245,7 +246,7 @@ There is no partial response: the player waits for the world query, Wiki calls, 
 - [x] Runtime request validation.
 - [x] Structured 400/500 error responses.
 - [ ] Selective Wiki retrieval.
-- [ ] Limited conversation context.
+- [x] Limited, in-memory conversation context for conservative follow-ups.
 - [x] Automated backend tests.
 
 ---
@@ -794,6 +795,8 @@ Manual acceptance results:
 
 Goal: combine multiple current facts only when the question benefits from them.
 
+**Status: complete — automated and in-game acceptance passed**
+
 Example:
 
 ```text
@@ -809,9 +812,17 @@ Rules:
 - Clearly distinguish hard requirements, useful recommendations, and optional preparation.
 - Acknowledge missing information instead of guessing.
 
+Implementation notes:
+
+- A deterministic `AssistanceIntentDetector` marks recommendation requests separately from general questions and goal plans without changing world-search intent.
+- Recommendation prompts require selective use of relevant current facts and distinguish hard requirements, useful recommendations, optional preparation, and unavailable facts.
+- Request-mode and prompt tests cover the roadmap's Nether-preparation case plus natural recommendation variations.
+
 ### Phase 8 — Goal-Based Multi-Step Assistance
 
 Goal: provide a personalized plan when the player explicitly asks for a broader goal.
+
+**Status: complete — automated and in-game acceptance passed**
 
 Examples:
 
@@ -826,9 +837,17 @@ Tasks:
 - Perform world searches only when the request actually requires one.
 - Avoid creating objectives the player did not request.
 
+Implementation notes:
+
+- Explicit goal language is classified as `GOAL_PLAN`; ordinary questions remain `GENERAL` and are not expanded into unsolicited plans.
+- Goal-plan prompts request three to seven practical steps, adapt only to relevant supplied facts, and prohibit invented searches, destinations, and extra objectives.
+- Existing world-query intent remains independent. Regression cases confirm recommendation, diamond-goal, and follow-up wording do not launch unrelated searches.
+
 ### Phase 9 — Limited Conversation Context
 
 Goal: support short follow-ups without building a long-term memory platform.
+
+**Status: complete — automated and in-game acceptance passed**
 
 Example:
 
@@ -845,6 +864,31 @@ Recommended boundary:
 - Reset context when the world/session changes.
 - Do not store long-term personal history.
 - Make stale world information clearly distinguishable from a fresh query.
+
+Implementation notes:
+
+- The Fabric client stores at most three successful question/answer turns and one successful structured destination in memory only. Failed requests are not retained.
+- History is transmitted only when conservative deterministic wording identifies a follow-up; independent requests send no prior turns. The prior structured destination is narrower still and is included only for location-specific follow-ups, preventing unrelated topical follow-ups from carrying stale coordinates.
+- Context expires after ten minutes and resets when the IntegratedServer instance changes. Questions and answers are length-bounded before storage.
+- Prior-destination navigation is recalculated from the current player position in the same dimension. Across dimensions, the reference remains labeled but carries no navigation.
+- The backend validates turn counts, lengths, age, target kind, dimension state, and deterministic navigation, and labels prior assistant text as non-authoritative context.
+
+Automated validation completed for Phases 7–9:
+
+- `AssistanceContextTest` passes 8 mode, follow-up, serialization, bounding, navigation, dimension, session-reset, expiration, and destination-replacement groups.
+- World-query intent regression passes all 192 target aliases and 56 behavior cases.
+- Backend `npm run typecheck` and all 26 contract, prompt, context, crafting, navigation, and regression tests pass.
+- Full Fabric build plus assistance-context, intent, crafting, and navigation suites pass.
+
+Manual acceptance and log-review results:
+
+- Nether-readiness recommendations correctly distinguished supplied portal materials, food, tools, unequipped shield, absent armor, useful preparation, and unavailable health/hunger facts. Repeating with an empty inventory did not reuse the earlier supplies.
+- The diamond goal produced a five-step plan grounded in the iron pickaxe, food, torches, water bucket, current Y level, and absent diamonds without launching a world search.
+- The village-building goal launched exactly one village search, used its authoritative coordinates/navigation, and adapted the plan to current supplies. A later explicit village lookup reused the valid cached result.
+- `How far is that?` reused the structured village destination without a new search, and movement before `What direction is it?` produced recalculated distance, offsets, and direction from the new position.
+- Independent redstone and obsidian questions sent no prior turns. Follow-up history remained capped at three turns, and changing worlds reset the session so `How far is that?` requested clarification instead of leaking the old destination.
+- Log review found no CraftAI exceptions, HTTP errors, rejected requests, failures, or stuck state across all 15 started/completed requests. Development-account 401/Realms warnings, shader warnings, invalid manually entered commands, and brief world-startup tick warnings were unrelated to CraftAI.
+- Log review also revealed that topical obsidian follow-ups still carried the older village reference even though answers ignored it. Destination context is now restricted to location-specific follow-up wording, with an automated regression proving topical follow-ups omit stale coordinates while location follow-ups retain them.
 
 ### Phase 10 — Reliability, Prompt, and UX Polish
 
@@ -1010,9 +1054,9 @@ When development resumes, use this order:
 4. [x] Refactor village/desert searches onto generic structure/biome helpers.
 5. [x] Complete the Phase 2 `CraftAiClient`, template-remnant, diagnostics cleanup, and manual acceptance.
 6. [x] Complete Phase 3 location-intent detection and manual acceptance.
-7. Add navigation calculations.
-8. Correct recipe extraction before promising inventory-aware crafting answers.
+7. [x] Add navigation calculations.
+8. [x] Correct recipe extraction before promising inventory-aware crafting answers.
 9. [x] Add the full vanilla Minecraft 26.2 biome and structure target catalog; complete expanded in-game acceptance before marking Phase 4 complete.
-10. Add contextual recommendations, multi-step help, and limited conversation context only after the underlying facts are reliable.
+10. [x] Add contextual recommendations, multi-step help, and limited conversation context only after the underlying facts are reliable; complete combined in-game acceptance before marking Phases 7–9 complete.
 
 This order protects the project's working foundation while making each later feature easier to add and verify.
