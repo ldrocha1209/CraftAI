@@ -1,6 +1,7 @@
 package com.lucasrocha.craftai.client.command;
 
 import com.lucasrocha.craftai.client.context.MinecraftContextCollector;
+import com.lucasrocha.craftai.client.data.ConversationContext;
 import com.lucasrocha.craftai.client.data.CraftAiRequest;
 import com.lucasrocha.craftai.client.data.MinecraftDataService;
 import com.lucasrocha.craftai.client.data.MinecraftItemData;
@@ -10,7 +11,10 @@ import com.lucasrocha.craftai.client.data.WorldQueryResult;
 import com.lucasrocha.craftai.client.data.WorldQueryTarget;
 import com.lucasrocha.craftai.client.intent.QueryIntent;
 import com.lucasrocha.craftai.client.intent.QueryIntentDetector;
+import com.lucasrocha.craftai.client.intent.AssistanceIntent;
+import com.lucasrocha.craftai.client.intent.AssistanceIntentDetector;
 import com.lucasrocha.craftai.client.service.CraftAiApi;
+import com.lucasrocha.craftai.client.service.ConversationContextService;
 import com.lucasrocha.craftai.client.service.WorldQueryService;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.logging.LogUtils;
@@ -33,6 +37,8 @@ public final class AskCommand {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final AtomicBoolean REQUEST_IN_PROGRESS = new AtomicBoolean(false);
     private static final CraftAiApi API = new CraftAiApi();
+    private static final ConversationContextService CONVERSATION =
+            new ConversationContextService();
 
     private AskCommand() {}
 
@@ -51,6 +57,7 @@ public final class AskCommand {
 
     private static int execute(FabricClientCommandSource source, String question) {
         QueryIntent intent = QueryIntentDetector.detect(question);
+        AssistanceIntent assistanceIntent = AssistanceIntentDetector.detect(question);
 
         if (intent.action() == QueryIntent.Action.AMBIGUOUS) {
             sendAmbiguousIntentFeedback(source, intent.target());
@@ -66,16 +73,33 @@ public final class AskCommand {
                 ? intent.target()
                 : null;
         LOGGER.info(
-                "CraftAI request started (intent={}, worldQueryTarget={})",
+                "CraftAI request started (intent={}, worldQueryTarget={}, assistanceMode={})",
                 intent.action(),
-                target == null ? "none" : target.identifier()
+                target == null ? "none" : target.identifier(),
+                assistanceIntent.mode()
         );
         source.sendFeedback(Component.literal("CraftAI: Thinking..."));
 
         try {
             Minecraft minecraft = Minecraft.getInstance();
             LocalPlayer player = minecraft.player;
+            MinecraftServer server = minecraft.getSingleplayerServer();
+            Object sessionIdentity = server == null ? minecraft.level : server;
             PlayerContext playerContext = MinecraftContextCollector.collect(minecraft);
+            ConversationContext conversation = CONVERSATION.snapshot(
+                    sessionIdentity,
+                    assistanceIntent.followUpLanguage(),
+                    assistanceIntent.destinationFollowUpLanguage(),
+                    playerContext
+            );
+            LOGGER.info(
+                    "CraftAI context prepared (followUp={}, recentTurns={}, priorDestination={})",
+                    conversation.followUp(),
+                    conversation.recentTurns().size(),
+                    conversation.lastDestination() == null
+                            ? "none"
+                            : conversation.lastDestination().target()
+            );
             MinecraftItemData matchedItem = MinecraftDataService.findItemInQuestion(question);
             MinecraftRecipeData recipe = matchedItem == null
                     ? null
@@ -85,19 +109,36 @@ public final class AskCommand {
                     );
 
             startWorldSearch(
-                    minecraft.getSingleplayerServer(),
+                    server,
                     player,
                     playerContext.getDimension(),
                     target
             ).thenCompose(worldQuery -> API.askQuestion(new CraftAiRequest(
                     question,
+                    assistanceIntent.mode(),
                     playerContext,
                     matchedItem,
                     recipe,
-                    worldQuery
-            ))).whenComplete((answer, error) -> completeRequest(minecraft, source, answer, error));
+                    worldQuery,
+                    conversation
+            )).thenApply(answer -> new CompletedAnswer(answer, worldQuery)))
+                    .whenComplete((result, error) -> completeRequest(
+                            minecraft,
+                            source,
+                            sessionIdentity,
+                            question,
+                            result,
+                            error
+                    ));
         } catch (RuntimeException error) {
-            completeRequest(Minecraft.getInstance(), source, null, error);
+            completeRequest(
+                    Minecraft.getInstance(),
+                    source,
+                    null,
+                    question,
+                    null,
+                    error
+            );
         }
 
         return 1;
@@ -106,12 +147,20 @@ public final class AskCommand {
     private static void completeRequest(
             Minecraft minecraft,
             FabricClientCommandSource source,
-            String answer,
+            Object sessionIdentity,
+            String question,
+            CompletedAnswer result,
             Throwable error
     ) {
         REQUEST_IN_PROGRESS.set(false);
 
         if (error == null) {
+            CONVERSATION.recordSuccessfulTurn(
+                    sessionIdentity,
+                    question,
+                    result.answer(),
+                    result.worldQuery()
+            );
             LOGGER.info("CraftAI request completed");
         } else {
             LOGGER.error("CraftAI request failed", unwrap(error));
@@ -119,7 +168,7 @@ public final class AskCommand {
 
         minecraft.execute(() -> source.sendFeedback(Component.literal(
                 error == null
-                        ? "CraftAI: " + answer
+                        ? "CraftAI: " + result.answer()
                         : "CraftAI: I couldn't get an answer right now."
         )));
     }
@@ -181,4 +230,6 @@ public final class AskCommand {
         }
         return error;
     }
+
+    private record CompletedAnswer(String answer, WorldQueryResult worldQuery) {}
 }

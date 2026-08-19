@@ -49,6 +49,10 @@ public class PlayerContext {
         return dimension;
     }
 
+    public Position getPosition() {
+        return position;
+    }
+
     public Map<String, Integer> getInventory() {
         return inventory;
     }

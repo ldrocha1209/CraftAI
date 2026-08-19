@@ -25,6 +25,11 @@ test("accepts the representative Java request contract", () => {
         request.question,
         "Where is the nearest village, and can I craft oak planks?"
     );
+    assert.equal(request.assistanceMode, "GENERAL");
+    assert.deepEqual(request.conversation, {
+        followUp: false,
+        recentTurns: []
+    });
     assert.deepEqual(request.player.position, { x: 100, y: 64, z: -40 });
     assert.equal(request.worldQuery?.target, "minecraft:village");
     assert.deepEqual(request.worldQuery?.navigation, {
@@ -149,6 +154,7 @@ test("rejects recipe totals and craftable flags that contradict requirements", (
 test("allows optional item, recipe, position, and world query context to be absent", () => {
     const request = parseAskRequest({
         question: "What should I do next?",
+        assistanceMode: "RECOMMENDATION",
         player: {
             gameMode: "UNKNOWN",
             biome: "UNKNOWN",
@@ -163,13 +169,200 @@ test("allows optional item, recipe, position, and world query context to be abse
                 leggings: "EMPTY",
                 boots: "EMPTY"
             }
-        }
+        },
+        conversation: { followUp: false, recentTurns: [] }
     });
 
     assert.equal(request.matchedItem, undefined);
     assert.equal(request.recipe, undefined);
     assert.equal(request.worldQuery, undefined);
     assert.equal(request.player.position, undefined);
+});
+
+test("builds focused player-aware recommendation instructions", () => {
+    const request = parseAskRequest({
+        ...(fixture as object),
+        question: "Am I prepared to go to the Nether?",
+        assistanceMode: "RECOMMENDATION",
+        worldQuery: undefined
+    });
+
+    const prompt = buildCraftAiPrompt(request, null);
+    assert.match(prompt, /This is a player-aware recommendation request/);
+    assert.match(prompt, /hard requirements, useful recommendations, and optional preparation/);
+    assert.match(prompt, /do not list every supplied context field/);
+});
+
+test("builds concise explicit goal-planning instructions", () => {
+    const request = parseAskRequest({
+        ...(fixture as object),
+        question: "I want to find diamonds. What should I do?",
+        assistanceMode: "GOAL_PLAN",
+        worldQuery: undefined
+    });
+
+    const prompt = buildCraftAiPrompt(request, null);
+    assert.match(prompt, /This is an explicit goal-planning request/);
+    assert.match(prompt, /normally 3 to 7 steps/);
+    assert.match(prompt, /Plan only for the goal the player stated/);
+});
+
+test("accepts a bounded follow-up with a recalculated prior destination", () => {
+    const request = parseAskRequest({
+        ...(fixture as object),
+        question: "How far is that?",
+        assistanceMode: "GENERAL",
+        matchedItem: undefined,
+        recipe: undefined,
+        worldQuery: undefined,
+        conversation: {
+            followUp: true,
+            recentTurns: [{
+                question: "Where is the nearest village?",
+                answer: "The village is near X 944, Z -288."
+            }],
+            lastDestination: {
+                sourceQuestion: "Where is the nearest village?",
+                kind: "STRUCTURE",
+                target: "minecraft:village",
+                dimension: "minecraft:overworld",
+                position: { x: 944, z: -288 },
+                navigation: {
+                    distanceBlocks: 880,
+                    deltaXBlocks: 844,
+                    deltaZBlocks: -248,
+                    direction: "EAST"
+                },
+                ageSeconds: 8,
+                sameDimension: true
+            }
+        }
+    });
+
+    assert.equal(request.conversation.followUp, true);
+    assert.equal(request.conversation.lastDestination?.target, "minecraft:village");
+    assert.equal(
+        request.conversation.lastDestination?.navigation?.distanceBlocks,
+        880
+    );
+    const prompt = buildCraftAiPrompt(request, null);
+    assert.match(prompt, /A lastDestination is a structured reference from an earlier/);
+    assert.match(prompt, /"ageSeconds": 8/);
+    assert.match(prompt, /not a fresh search for the current request/);
+});
+
+test("rejects conversation history on an independent request", () => {
+    assert.throws(
+        () => parseAskRequest({
+            ...(fixture as object),
+            conversation: {
+                followUp: false,
+                recentTurns: [{ question: "Old question", answer: "Old answer" }]
+            }
+        }),
+        (error: unknown) => {
+            assert.ok(error instanceof RequestValidationError);
+            assert.ok(error.issues.includes(
+                "Non-follow-up requests must not include conversation history."
+            ));
+            return true;
+        }
+    );
+});
+
+test("rejects oversized or stale conversation context", () => {
+    assert.throws(
+        () => parseAskRequest({
+            ...(fixture as object),
+            worldQuery: undefined,
+            conversation: {
+                followUp: true,
+                recentTurns: [1, 2, 3, 4].map(index => ({
+                    question: `Question ${index}`,
+                    answer: `Answer ${index}`
+                })),
+                lastDestination: {
+                    sourceQuestion: "Where is the nearest village?",
+                    kind: "STRUCTURE",
+                    target: "minecraft:village",
+                    dimension: "minecraft:overworld",
+                    position: { x: 944, z: -288 },
+                    navigation: {
+                        distanceBlocks: 880,
+                        deltaXBlocks: 844,
+                        deltaZBlocks: -248,
+                        direction: "EAST"
+                    },
+                    ageSeconds: 601,
+                    sameDimension: true
+                }
+            }
+        }),
+        (error: unknown) => {
+            assert.ok(error instanceof RequestValidationError);
+            assert.ok(error.issues.includes(
+                "conversation.recentTurns must contain at most 3 turns."
+            ));
+            assert.ok(error.issues.includes(
+                "conversation.lastDestination.ageSeconds must not exceed 600."
+            ));
+            return true;
+        }
+    );
+});
+
+test("rejects prior-destination navigation that conflicts with current position", () => {
+    const invalid = structuredClone(fixture as object) as Record<string, any>;
+    invalid.worldQuery = undefined;
+    invalid.conversation = {
+        followUp: true,
+        recentTurns: [{ question: "Where is the village?", answer: "At 944, -288" }],
+        lastDestination: {
+            sourceQuestion: "Where is the village?",
+            kind: "STRUCTURE",
+            target: "minecraft:village",
+            dimension: "minecraft:overworld",
+            position: { x: 944, z: -288 },
+            navigation: {
+                distanceBlocks: 1,
+                deltaXBlocks: 1,
+                deltaZBlocks: 1,
+                direction: "NORTH"
+            },
+            ageSeconds: 2,
+            sameDimension: true
+        }
+    };
+
+    assert.throws(() => parseAskRequest(invalid), RequestValidationError);
+});
+
+test("accepts a prior destination across dimensions without navigation", () => {
+    const request = parseAskRequest({
+        ...(fixture as object),
+        question: "What should I bring there?",
+        assistanceMode: "RECOMMENDATION",
+        worldQuery: undefined,
+        conversation: {
+            followUp: true,
+            recentTurns: [{
+                question: "Where is the nearest Nether fortress?",
+                answer: "A fortress was found while you were in the Nether."
+            }],
+            lastDestination: {
+                sourceQuestion: "Where is the nearest Nether fortress?",
+                kind: "STRUCTURE",
+                target: "minecraft:nether_fortress",
+                dimension: "minecraft:the_nether",
+                position: { x: 320, z: -160 },
+                ageSeconds: 30,
+                sameDimension: false
+            }
+        }
+    });
+
+    assert.equal(request.conversation.lastDestination?.sameDimension, false);
+    assert.equal(request.conversation.lastDestination?.navigation, undefined);
 });
 
 test("accepts a structured unsupported world search", () => {
