@@ -2,14 +2,14 @@
 	"schemaVersion": 1,
 	"id": "craft-ai",
 	"version": "${version}",
-	"name": "craft-ai",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"name": "CraftAI",
+	"description": "A single-player Minecraft assistant grounded in the player's current game context.",
 	"authors": [
-		"Me!"
+		"Lucas Rocha"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
+		"homepage": "https://github.com/ldrocha1209/CraftAI",
+		"sources": "https://github.com/ldrocha1209/CraftAI"
 	},
 	"license": "CC0-1.0",
 	"icon": "assets/craft-ai/icon.png",
@@ -22,13 +22,6 @@
 			"com.lucasrocha.craftai.client.CraftAiClient"
 		]
 	},
-	"mixins": [
-		"craft-ai.mixins.json",
-		{
-			"config": "craft-ai.client.mixins.json",
-			"environment": "client"
-		}
-	],
 	"depends": {
 		"fabricloader": ">=0.19.3",
 		"minecraft": "~26.2",

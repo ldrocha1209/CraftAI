@@ -24,12 +24,9 @@ public class MinecraftDataService {
 
         for (Item item : BuiltInRegistries.ITEM) {
 
-            String itemId = BuiltInRegistries.ITEM
-                    .getKey(item)
-                    .toString();
+            String itemId = MinecraftResourceNames.itemId(item);
 
-            String itemName = itemId
-                    .replace("minecraft:", "")
+            String itemName = MinecraftResourceNames.path(itemId)
                     .replace("_", " ");
 
             if (searchQuestion.contains(itemName)
@@ -70,7 +67,7 @@ public class MinecraftDataService {
             String recipeId =
                     recipeHolder.id().toString();
 
-            if (!recipeId.contains(itemId.replace("minecraft:", ""))) {
+            if (!recipeId.contains(MinecraftResourceNames.path(itemId))) {
                 continue;
             }
 

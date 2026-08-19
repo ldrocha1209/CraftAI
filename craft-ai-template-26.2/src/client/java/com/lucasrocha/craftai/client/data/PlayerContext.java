@@ -44,4 +44,8 @@ public class PlayerContext {
         this.inventory = Map.copyOf(inventory);
         this.equipment = equipment;
     }
+
+    public String getDimension() {
+        return dimension;
+    }
 }

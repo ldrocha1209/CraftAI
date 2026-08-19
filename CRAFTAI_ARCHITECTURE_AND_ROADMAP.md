@@ -531,16 +531,45 @@ Manual acceptance results:
 
 Goal: make the working implementation easier to extend and demonstrate.
 
+**Status: complete**
+
 Tasks:
 
-- Remove temporary debug output and unused imports/variables.
-- Remove empty example mixins and their configuration if they remain unnecessary.
-- Replace placeholder Fabric metadata.
-- Extract context snapshot construction from the command callback.
-- Keep `/ask` orchestration readable and linear.
-- Normalize resource IDs and biome names in one place.
-- Ensure request state is released for every success, exception, timeout, and malformed response.
-- Add structured logs that do not expose unnecessary player data or API secrets.
+- [x] Remove temporary debug output and unused imports/variables.
+- [x] Remove empty example mixins and their configuration if they remain unnecessary.
+- [x] Replace placeholder Fabric metadata.
+- [x] Extract context snapshot construction from the command callback.
+- [x] Keep `/ask` orchestration readable and linear.
+- [x] Normalize resource IDs and biome names in one place.
+- [x] Ensure request state is released for every success, exception, timeout, malformed response, and cancellation.
+- [x] Add structured logs that do not expose unnecessary player data or API secrets.
+
+Implementation notes:
+
+- `CraftAiClient` now registers `AskCommand` and `BiomeChangeNotifier` only.
+- `MinecraftContextCollector` owns construction of the immutable player-context snapshot.
+- `MinecraftResourceNames` is the single normalization point for item, biome, and dimension IDs and biome display names.
+- `/ask` acquires its request guard before collecting data and releases it from one completion path for both successful and exceptional outcomes.
+- Request logs contain lifecycle state and the selected world-query target, but omit the player's question, inventory, equipment, coordinates, and backend configuration.
+- Empty template mixins and their required configurations were removed, and Fabric metadata now identifies CraftAI and its actual repository.
+
+Automated validation completed:
+
+- Fabric `./gradlew build` passes.
+- The built mod JAR contains the extracted client classes and no removed example mixins or mixin configurations.
+- Backend `npm run typecheck` passes.
+- All 8 backend contract and prompt tests pass.
+
+Manual acceptance results:
+
+- Normal knowledge and live context questions returned accurate answers without launching world searches.
+- Village search completed in 0.17 seconds; desert searches completed in 1.16–1.29 seconds with no search-related server-overload warning.
+- Multi-target handling rejected the request immediately without starting a request or world search.
+- The rapid-request test started exactly one desert search and rejected the second request while the first was active.
+- A Nether village request returned the Overworld-only limitation without launching a world search.
+- Biome-change notifications used normalized display names in the Overworld and Nether.
+- A deliberate backend connection failure released request state immediately; the next request succeeded after the backend restarted.
+- Every started request had a matching completion or expected failure log, and logs did not expose questions, inventory, equipment, coordinates, or backend configuration.
 
 Acceptance criteria:
 
@@ -869,9 +898,9 @@ When development resumes, use this order:
 1. [x] Create a small regression checklist for the currently working village, desert, normal-question, and failure flows.
 2. [x] Stabilize and validate the Java-to-TypeScript request contract.
 3. [x] Replace the misleading `villageResults` string with structured world-query data.
-4. Refactor village/desert searches onto generic structure/biome helpers.
-5. Improve location-intent detection and test positive/negative phrasing.
-6. Clean `CraftAiClient`, template remnants, and diagnostics without changing behavior.
+4. [x] Refactor village/desert searches onto generic structure/biome helpers.
+5. [x] Complete the Phase 2 `CraftAiClient`, template-remnant, diagnostics cleanup, and manual acceptance.
+6. Improve location-intent detection and test positive/negative phrasing.
 7. Add navigation calculations.
 8. Correct recipe extraction before promising inventory-aware crafting answers.
 9. Add new world-query targets one at a time.

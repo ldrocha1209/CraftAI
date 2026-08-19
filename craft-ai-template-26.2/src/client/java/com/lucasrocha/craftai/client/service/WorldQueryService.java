@@ -1,6 +1,7 @@
 package com.lucasrocha.craftai.client.service;
 
 import com.lucasrocha.craftai.client.data.WorldQueryResult;
+import com.lucasrocha.craftai.client.data.MinecraftResourceNames;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
@@ -97,7 +98,7 @@ public final class WorldQueryService {
             return WorldQueryResult.notFound(
                     target.getKind(),
                     target,
-                    dimensionId(serverLevel)
+                    MinecraftResourceNames.dimensionId(serverLevel)
             );
         }
 
@@ -159,7 +160,7 @@ public final class WorldQueryService {
             return WorldQueryResult.notFound(
                     target.getKind(),
                     target,
-                    dimensionId(serverLevel)
+                    MinecraftResourceNames.dimensionId(serverLevel)
             );
         }
 
@@ -238,7 +239,7 @@ public final class WorldQueryService {
         return WorldQueryResult.found(
                 target.getKind(),
                 target,
-                dimensionId(serverLevel),
+                MinecraftResourceNames.dimensionId(serverLevel),
                 resultPosition.getX(),
                 resultPosition.getZ(),
                 distance
@@ -252,7 +253,7 @@ public final class WorldQueryService {
         return WorldQueryResult.unsupported(
                 target.getKind(),
                 target,
-                serverLevel == null ? "UNKNOWN" : dimensionId(serverLevel),
+                MinecraftResourceNames.dimensionId(serverLevel),
                 "A single-player IntegratedServer, server level, and player position are required."
         );
     }
@@ -267,7 +268,4 @@ public final class WorldQueryService {
         }
     }
 
-    private static String dimensionId(ServerLevel serverLevel) {
-        return serverLevel.dimension().identifier().toString();
-    }
 }
