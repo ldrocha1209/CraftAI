@@ -65,6 +65,7 @@ export class MinecraftWikiService {
         const cacheKey = normalize(searchTerm);
         const cached = this.cache.get(cacheKey);
         if (cached && cached.expiresAt > this.now()) {
+            // Reinsertion makes this a small LRU cache without another dependency.
             this.cache.delete(cacheKey);
             this.cache.set(cacheKey, cached);
             return cached.value;
@@ -120,11 +121,11 @@ export class MinecraftWikiService {
             query?: { pages?: Record<string, { extract?: unknown }> };
         };
         const firstPage = data.query?.pages
-                ? Object.values(data.query.pages)[0]
-                : undefined;
+            ? Object.values(data.query.pages)[0]
+            : undefined;
         return typeof firstPage?.extract === "string" && firstPage.extract.length > 0
-                ? firstPage.extract
-                : null;
+            ? firstPage.extract
+            : null;
     }
 
     private store(key: string, value: string | null): void {
@@ -143,6 +144,8 @@ export class MinecraftWikiService {
 }
 
 export function shouldRetrieveWiki(request: AskRequest): boolean {
+    // Minecraft already supplied authoritative facts for these request types;
+    // a general Wiki lookup would add latency without improving the answer.
     if (request.assistanceMode !== "GENERAL"
             || request.worldQuery
             || request.conversation.followUp) {

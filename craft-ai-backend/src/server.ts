@@ -9,7 +9,7 @@ const host = process.env.HOST ?? "127.0.0.1";
 
 app.use(express.json());
 
-app.get("/", (req, res) => {
+app.get("/", (_req, res) => {
     res.json({
         status: "ok",
         service: "craftai-backend"
@@ -18,7 +18,12 @@ app.get("/", (req, res) => {
 
 app.use("/ask", askRouter);
 
-app.use((error: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((
+    error: unknown,
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction
+) => {
     if (error instanceof BackendError) {
         console.error(`CraftAI service error (${error.code}): ${error.message}`);
         res.status(error.status).json({

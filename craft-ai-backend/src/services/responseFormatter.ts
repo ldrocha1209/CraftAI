@@ -26,7 +26,7 @@ function truncateAtSentence(value: string, maxLength: number): string {
         candidate.lastIndexOf("\n")
     );
     const cutoff = sentenceEnd >= Math.floor(maxLength * 0.6)
-            ? sentenceEnd + 1
-            : candidate.lastIndexOf(" ");
+        ? sentenceEnd + 1
+        : candidate.lastIndexOf(" ");
     return value.substring(0, Math.max(1, cutoff)).trimEnd() + suffix;
 }
