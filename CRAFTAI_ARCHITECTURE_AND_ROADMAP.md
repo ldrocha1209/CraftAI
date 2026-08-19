@@ -180,7 +180,7 @@ There is currently:
    - Main-hand and off-hand items.
    - Helmet, chestplate, leggings, and boots.
 8. The collected values are placed in a nested `PlayerContext` containing numeric position and structured equipment data.
-9. `ConversationContextService` supplies history only for detected follow-ups, recalculates navigation to a recent referenced destination from the current position, and resets bounded state when the single-player server instance changes or ten minutes elapse.
+9. `ConversationContextService` supplies history only for detected follow-ups, recalculates navigation to a recent referenced destination from the current position, and resets bounded state after five related follow-ups, on an independent topic, when the single-player server instance changes, or when ten minutes elapse.
 10. An `AtomicBoolean` allows only one backend request at a time.
 11. After any world search completes, `CraftAiApi` serializes one typed `CraftAiRequest` through Gson and sends it to the configured backend `/ask` endpoint with a 60-second client timeout.
 12. The Express route validates and reconstructs the request through `parseAskRequest()`. Invalid payloads receive a structured HTTP 400 response before any external request is made.
@@ -867,9 +867,9 @@ Recommended boundary:
 
 Implementation notes:
 
-- The Fabric client stores at most three successful question/answer turns and one successful structured destination in memory only. Failed requests are not retained.
+- The Fabric client stores a maximum five-turn topic window and one successful structured destination in memory only. Failed requests are not retained. Independent questions start a fresh topic, and the fifth successful related follow-up is answered before the topic automatically clears.
 - History is transmitted only when conservative deterministic wording identifies a follow-up; independent requests send no prior turns. The prior structured destination is narrower still and is included only for location-specific follow-ups, preventing unrelated topical follow-ups from carrying stale coordinates.
-- Context expires after ten minutes and resets when the IntegratedServer instance changes. Questions and answers are length-bounded before storage.
+- Context expires after ten minutes, resets when the IntegratedServer instance changes, and can still be cleared explicitly with `/craftai reset`. Questions and answers are length-bounded before storage.
 - Prior-destination navigation is recalculated from the current player position in the same dimension. Across dimensions, the reference remains labeled but carries no navigation.
 - The backend validates turn counts, lengths, age, target kind, dimension state, and deterministic navigation, and labels prior assistant text as non-authoritative context.
 
@@ -886,13 +886,15 @@ Manual acceptance and log-review results:
 - The diamond goal produced a five-step plan grounded in the iron pickaxe, food, torches, water bucket, current Y level, and absent diamonds without launching a world search.
 - The village-building goal launched exactly one village search, used its authoritative coordinates/navigation, and adapted the plan to current supplies. A later explicit village lookup reused the valid cached result.
 - `How far is that?` reused the structured village destination without a new search, and movement before `What direction is it?` produced recalculated distance, offsets, and direction from the new position.
-- Independent redstone and obsidian questions sent no prior turns. Follow-up history remained capped at three turns, and changing worlds reset the session so `How far is that?` requested clarification instead of leaking the old destination.
+- Independent redstone and obsidian questions sent no prior turns. Follow-up history remains capped at five turns within one related topic, and changing worlds resets the session so `How far is that?` requests clarification instead of leaking an old destination.
 - Log review found no CraftAI exceptions, HTTP errors, rejected requests, failures, or stuck state across all 15 started/completed requests. Development-account 401/Realms warnings, shader warnings, invalid manually entered commands, and brief world-startup tick warnings were unrelated to CraftAI.
 - Log review also revealed that topical obsidian follow-ups still carried the older village reference even though answers ignored it. Destination context is now restricted to location-specific follow-up wording, with an automated regression proving topical follow-ups omit stale coordinates while location follow-ups retain them.
 
 ### Phase 10 — Reliability, Prompt, and UX Polish
 
 Goal: turn the complete feature set into a strong portfolio-quality product.
+
+Status: core implementation and automated validation complete; manual in-game UX, failure-path acceptance, and portfolio demo capture pending.
 
 Tasks:
 
@@ -908,6 +910,14 @@ Tasks:
 - Add backend tests, Fabric tests where practical, and documented manual test scenarios.
 - Document setup for both repositories from a clean checkout.
 - Capture a portfolio demo showing normal Q&A, context awareness, a non-blocking world query, navigation, and inventory-aware reasoning.
+
+Implementation notes:
+
+- Wiki retrieval is selective, has a five-second default timeout, uses a short-lived bounded cache, and falls back to answering without Wiki context.
+- OpenAI calls have an explicit timeout and one retry; backend failures use structured error codes that become useful in-game messages.
+- Prompt response budgets and deterministic output formatting keep chat answers concise, with readable splitting for long responses.
+- CraftAI chat output has spacing and distinct label/body styling. `/craftai help`, `/craftai status`, and `/craftai reset` provide local diagnostics and context control.
+- Root GitHub Actions CI validates the backend and Fabric mod. Setup and privacy behavior are documented from a clean checkout.
 
 ---
 

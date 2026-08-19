@@ -1,11 +1,19 @@
-# craft-ai
+# CraftAI Fabric Mod
 
-An AI-powered Minecraft Java Edition assistant that allows players to ask natural-language questions about Minecraft directly from within the game.
+This directory contains the Java 25/Fabric client for CraftAI on Minecraft 26.2.
 
-## Setup
+From a clean checkout:
 
-For setup instructions, please see the [Fabric Documentation page](https://docs.fabricmc.net/develop/getting-started/creating-a-project#setting-up) related to the IDE that you are using.
+```bash
+./gradlew build
+```
 
-## License
+For local development, start the backend as described in the [workspace README](../README.md), then run:
 
-This template is available under the CC0 license. Feel free to learn from it and incorporate it in your own projects.
+```bash
+./gradlew runClient
+```
+
+Open a single-player world and use `/ask <question>`. Run `/craftai help` for local commands or `/craftai status` to check the backend connection and available game context.
+
+The backend defaults to `http://localhost:3000`. Override it with `CRAFTAI_BACKEND_URL` or the `craftai.backendUrl` Java system property.

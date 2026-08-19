@@ -12,7 +12,8 @@ import java.util.function.LongSupplier;
 
 public final class ConversationContextService {
 
-    static final int MAX_TURNS = 3;
+    static final int MAX_TURNS = 5;
+    static final int MAX_RELATED_FOLLOW_UPS = 5;
     static final long MAX_AGE_MILLIS = Duration.ofMinutes(10).toMillis();
     private static final int MAX_QUESTION_LENGTH = 300;
     private static final int MAX_ANSWER_LENGTH = 1_200;
@@ -22,6 +23,7 @@ public final class ConversationContextService {
     private Object sessionIdentity;
     private StoredDestination lastDestination;
     private long lastActivityMillis;
+    private int relatedFollowUpCount;
 
     public ConversationContextService() {
         this(System::currentTimeMillis);
@@ -39,6 +41,11 @@ public final class ConversationContextService {
     ) {
         ensureSession(currentSessionIdentity);
         expireInactiveContext();
+
+        if (!followUpLanguage) {
+            clearTopic();
+            return ConversationContext.none();
+        }
 
         boolean followUp = followUpLanguage && !turns.isEmpty();
         if (!followUp) {
@@ -63,8 +70,28 @@ public final class ConversationContextService {
             String answer,
             WorldQueryResult worldQuery
     ) {
+        recordSuccessfulTurn(
+                currentSessionIdentity,
+                question,
+                answer,
+                worldQuery,
+                false
+        );
+    }
+
+    public synchronized void recordSuccessfulTurn(
+            Object currentSessionIdentity,
+            String question,
+            String answer,
+            WorldQueryResult worldQuery,
+            boolean relatedFollowUp
+    ) {
         ensureSession(currentSessionIdentity);
         expireInactiveContext();
+
+        if (!relatedFollowUp) {
+            clearTopic();
+        }
 
         turns.addLast(new StoredTurn(
                 truncate(question, MAX_QUESTION_LENGTH),
@@ -87,6 +114,39 @@ public final class ConversationContextService {
                     : null;
         }
         lastActivityMillis = currentTimeMillis.getAsLong();
+
+        if (relatedFollowUp) {
+            relatedFollowUpCount++;
+            if (relatedFollowUpCount >= MAX_RELATED_FOLLOW_UPS) {
+                clearTopic();
+            }
+        }
+    }
+
+    public synchronized void clear() {
+        clearTopic();
+    }
+
+    private void clearTopic() {
+        turns.clear();
+        lastDestination = null;
+        lastActivityMillis = 0;
+        relatedFollowUpCount = 0;
+    }
+
+    public synchronized int turnCount() {
+        expireInactiveContext();
+        return turns.size();
+    }
+
+    public synchronized boolean hasDestination() {
+        expireInactiveContext();
+        return lastDestination != null;
+    }
+
+    public synchronized int relatedFollowUpCount() {
+        expireInactiveContext();
+        return relatedFollowUpCount;
     }
 
     private ConversationContext.ReferencedDestination referencedDestination(
@@ -132,18 +192,14 @@ public final class ConversationContextService {
     private void ensureSession(Object currentSessionIdentity) {
         if (sessionIdentity != currentSessionIdentity) {
             sessionIdentity = currentSessionIdentity;
-            turns.clear();
-            lastDestination = null;
-            lastActivityMillis = 0;
+            clearTopic();
         }
     }
 
     private void expireInactiveContext() {
         long now = currentTimeMillis.getAsLong();
         if (lastActivityMillis > 0 && now - lastActivityMillis > MAX_AGE_MILLIS) {
-            turns.clear();
-            lastDestination = null;
-            lastActivityMillis = 0;
+            clearTopic();
         }
     }
 

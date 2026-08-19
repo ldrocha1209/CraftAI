@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { generateAnswer } from "../services/aiService.js";
-import { searchMinecraftWiki } from "../services/wikiService.js";
+import { minecraftWikiService } from "../services/wikiService.js";
 import {
     parseAskRequest,
     RequestValidationError
@@ -12,7 +12,7 @@ const router = Router();
 router.post("/", async (req, res, next) => {
     try {
         const request = parseAskRequest(req.body);
-        const wikiContext = await searchMinecraftWiki(request.question);
+        const wikiContext = await minecraftWikiService.contextFor(request);
         const answer = await generateAnswer(request, wikiContext);
         const response: AskResponse = { answer };
 

@@ -33,7 +33,16 @@ public final class AssistanceIntentDetector {
     private static final List<Pattern> FOLLOW_UP_PATTERNS = List.of(
             Pattern.compile("^(?:and|also|okay so|what about)\\b"),
             Pattern.compile("\\btell me more(?: about (?:that|it))?\\b"),
-            Pattern.compile("\\b(?:that|it|there) instead\\b")
+            Pattern.compile("\\b(?:that|it|there) instead\\b"),
+            Pattern.compile(
+                    "\\bhow do i (?:make|build|craft|find|get|use) "
+                            + "(?:another|a second|one more)(?: one)?\\b"
+            ),
+            Pattern.compile(
+                    "\\b(?:can|could|should) i (?:make|build|craft|get|use) "
+                            + "(?:another|a second|one more)(?: one)?\\b"
+            ),
+            Pattern.compile("\\b(?:another|a second|one more) (?:one|of those|of them)\\b")
     );
 
     private static final List<Pattern> DESTINATION_FOLLOW_UP_PATTERNS = List.of(

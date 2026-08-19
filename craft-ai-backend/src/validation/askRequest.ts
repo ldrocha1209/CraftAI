@@ -79,8 +79,8 @@ function parseConversationContext(
         issues
     ).map((turn, index) => parseConversationTurn(turn, index, issues));
 
-    if (recentTurns.length > 3) {
-        issues.push("conversation.recentTurns must contain at most 3 turns.");
+    if (recentTurns.length > 5) {
+        issues.push("conversation.recentTurns must contain at most 5 turns.");
     }
 
     const lastDestination = parseOptionalReferencedDestination(

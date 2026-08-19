@@ -84,11 +84,20 @@ tasks.register("assistanceContextTest", JavaExec) {
 	mainClass = "com.lucasrocha.craftai.client.service.AssistanceContextTest"
 }
 
+tasks.register("phase10Test", JavaExec) {
+	group = "verification"
+	description = "Runs deterministic Phase 10 chat presentation tests."
+	dependsOn intentTestClasses
+	classpath = sourceSets.intentTest.runtimeClasspath
+	mainClass = "com.lucasrocha.craftai.client.presentation.CraftAiChatPresenterTest"
+}
+
 tasks.named("check") {
 	dependsOn intentTest
 	dependsOn navigationTest
 	dependsOn craftingTest
 	dependsOn assistanceContextTest
+	dependsOn phase10Test
 }
 
 java {

@@ -30,13 +30,15 @@ public final class AssistanceContextTest {
     public static void main(String[] args) {
         verifiesAssistanceModes();
         verifiesFollowUpLanguage();
+        verifiesEllipticalFollowUpCarriesTopic();
         verifiesHistoryIsBoundedAndOnlySentForFollowUps();
         verifiesDestinationNavigationIsRecalculated();
         verifiesDimensionAndSessionBoundaries();
         verifiesContextExpires();
         verifiesUnsuccessfulDestinationReplacesOldReference();
+        verifiesManualReset();
         verifiesRequestSerialization();
-        System.out.println("AssistanceContextTest: 8 groups passed");
+        System.out.println("AssistanceContextTest: 10 groups passed");
     }
 
     private static void verifiesAssistanceModes() {
@@ -58,6 +60,9 @@ public final class AssistanceContextTest {
         assertFollowUp("How do I get there?", true);
         assertFollowUp("What should I bring there?", true);
         assertFollowUp("Tell me more about that", true);
+        assertFollowUp("How do I make a second?", true);
+        assertFollowUp("Can I build another one?", true);
+        assertFollowUp("Could I craft one more?", true);
         assertFollowUp("What is a village?", false);
         assertFollowUp("Where is the nearest village?", false);
         assertDestinationFollowUp("How far is that?", true);
@@ -73,18 +78,56 @@ public final class AssistanceContextTest {
         Object session = new Object();
         PlayerContext player = player("minecraft:overworld", 0, 64, 0);
 
-        for (int index = 1; index <= 4; index++) {
-            service.recordSuccessfulTurn(session, "question " + index, "answer " + index, null);
+        service.recordSuccessfulTurn(session, "question 1", "answer 1", null, false);
+        for (int index = 2; index <= 5; index++) {
+            service.recordSuccessfulTurn(session, "question " + index, "answer " + index, null, true);
         }
 
+        ConversationContext followUp = service.snapshot(session, true, false, player);
+        assertEquals("follow-up history size", 5, followUp.recentTurns().size());
+        assertEquals("oldest retained question", "question 1", followUp.recentTurns().getFirst().question());
+        assertEquals("newest retained question", "question 5", followUp.recentTurns().getLast().question());
+        assertEquals("related follow-up count", 4, service.relatedFollowUpCount());
+
+        service.recordSuccessfulTurn(session, "question 6", "answer 6", null, true);
+        ConversationContext automaticallyReset = service.snapshot(session, true, false, player);
+        assertEquals("automatic reset after fifth related follow-up", false, automaticallyReset.followUp());
+        assertEquals("automatic reset turn count", 0, service.turnCount());
+
+        service.recordSuccessfulTurn(session, "old topic", "old answer", null, false);
         ConversationContext independent = service.snapshot(session, false, false, player);
         assertEquals("independent follow-up", false, independent.followUp());
         assertEquals("independent history", 0, independent.recentTurns().size());
+        assertEquals("independent request clears old topic", 0, service.turnCount());
+    }
 
-        ConversationContext followUp = service.snapshot(session, true, false, player);
-        assertEquals("follow-up history size", 3, followUp.recentTurns().size());
-        assertEquals("oldest retained question", "question 2", followUp.recentTurns().getFirst().question());
-        assertEquals("newest retained question", "question 4", followUp.recentTurns().getLast().question());
+    private static void verifiesEllipticalFollowUpCarriesTopic() {
+        ConversationContextService service = new ConversationContextService();
+        Object session = new Object();
+        PlayerContext player = player("minecraft:overworld", 0, 64, 0);
+        service.recordSuccessfulTurn(
+                session,
+                "Explain how Nether portals work",
+                "Build a rectangular obsidian frame and light the inside.",
+                null,
+                false
+        );
+
+        AssistanceIntent intent = AssistanceIntentDetector.detect("How do I make a second?");
+        ConversationContext context = service.snapshot(
+                session,
+                intent.followUpLanguage(),
+                intent.destinationFollowUpLanguage(),
+                player
+        );
+
+        assertEquals("elliptical follow-up signal", true, context.followUp());
+        assertEquals("elliptical follow-up history", 1, context.recentTurns().size());
+        assertEquals(
+                "elliptical follow-up subject source",
+                "Explain how Nether portals work",
+                context.recentTurns().getFirst().question()
+        );
     }
 
     private static void verifiesDestinationNavigationIsRecalculated() {
@@ -212,6 +255,23 @@ public final class AssistanceContextTest {
         assertEquals("serialized conversation", true, json.contains(
                 "\"conversation\":{\"followUp\":false,\"recentTurns\":[]}"
         ));
+    }
+
+    private static void verifiesManualReset() {
+        ConversationContextService service = new ConversationContextService();
+        Object session = new Object();
+        service.recordSuccessfulTurn(
+                session,
+                "Where is the nearest village?",
+                "At 944, -288",
+                foundVillage(100, -40, 944, -288)
+        );
+
+        assertEquals("turn count before reset", 1, service.turnCount());
+        assertEquals("destination before reset", true, service.hasDestination());
+        service.clear();
+        assertEquals("turn count after reset", 0, service.turnCount());
+        assertEquals("destination after reset", false, service.hasDestination());
     }
 
     private static WorldQueryResult foundVillage(

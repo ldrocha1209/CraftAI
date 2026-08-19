@@ -9,6 +9,7 @@ import com.lucasrocha.craftai.client.data.MinecraftRecipeData;
 import com.lucasrocha.craftai.client.data.PlayerContext;
 import com.lucasrocha.craftai.client.data.WorldQueryResult;
 import com.lucasrocha.craftai.client.data.WorldQueryTarget;
+import com.lucasrocha.craftai.client.data.AssistanceMode;
 import com.lucasrocha.craftai.client.intent.QueryIntent;
 import com.lucasrocha.craftai.client.intent.QueryIntentDetector;
 import com.lucasrocha.craftai.client.intent.AssistanceIntent;
@@ -16,6 +17,8 @@ import com.lucasrocha.craftai.client.intent.AssistanceIntentDetector;
 import com.lucasrocha.craftai.client.service.CraftAiApi;
 import com.lucasrocha.craftai.client.service.ConversationContextService;
 import com.lucasrocha.craftai.client.service.WorldQueryService;
+import com.lucasrocha.craftai.client.service.CraftAiApiException;
+import com.lucasrocha.craftai.client.presentation.CraftAiChatPresenter;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.logging.LogUtils;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
@@ -23,7 +26,6 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import org.slf4j.Logger;
@@ -65,7 +67,7 @@ public final class AskCommand {
         }
 
         if (!REQUEST_IN_PROGRESS.compareAndSet(false, true)) {
-            source.sendFeedback(Component.literal("CraftAI is already thinking..."));
+            CraftAiChatPresenter.status(source, "A request is already in progress.");
             return 1;
         }
 
@@ -78,7 +80,7 @@ public final class AskCommand {
                 target == null ? "none" : target.identifier(),
                 assistanceIntent.mode()
         );
-        source.sendFeedback(Component.literal("CraftAI: Thinking..."));
+        CraftAiChatPresenter.status(source, progressMessage(target, assistanceIntent.mode()));
 
         try {
             Minecraft minecraft = Minecraft.getInstance();
@@ -121,7 +123,11 @@ public final class AskCommand {
                     recipe,
                     worldQuery,
                     conversation
-            )).thenApply(answer -> new CompletedAnswer(answer, worldQuery)))
+            )).thenApply(answer -> new CompletedAnswer(
+                    answer,
+                    worldQuery,
+                    conversation.followUp()
+            )))
                     .whenComplete((result, error) -> completeRequest(
                             minecraft,
                             source,
@@ -159,18 +165,25 @@ public final class AskCommand {
                     sessionIdentity,
                     question,
                     result.answer(),
-                    result.worldQuery()
+                    result.worldQuery(),
+                    result.relatedFollowUp()
             );
             LOGGER.info("CraftAI request completed");
         } else {
             LOGGER.error("CraftAI request failed", unwrap(error));
         }
 
-        minecraft.execute(() -> source.sendFeedback(Component.literal(
-                error == null
-                        ? "CraftAI: " + result.answer()
-                        : "CraftAI: I couldn't get an answer right now."
-        )));
+        minecraft.execute(() -> {
+            if (error == null) {
+                CraftAiChatPresenter.answer(source, result.answer());
+                return;
+            }
+            Throwable cause = unwrap(error);
+            String message = cause instanceof CraftAiApiException apiError
+                    ? apiError.playerMessage()
+                    : "I couldn't get an answer right now. Check the log and try again.";
+            CraftAiChatPresenter.error(source, message);
+        });
     }
 
     private static CompletableFuture<WorldQueryResult> startWorldSearch(
@@ -215,21 +228,60 @@ public final class AskCommand {
             WorldQueryTarget target
     ) {
         String message = target == null
-                ? "CraftAI: I can't compare multiple world locations yet. "
+                ? "I can't compare multiple world locations yet. "
                         + "Please ask about one location at a time."
-                : "CraftAI: I'm not sure whether you want me to search your world. "
+                : "I'm not sure whether you want me to search your world. "
                         + "Try asking 'Where is the nearest "
                         + target.displayName()
                         + "?'";
-        source.sendFeedback(Component.literal(message));
+        CraftAiChatPresenter.info(source, message);
     }
 
     private static Throwable unwrap(Throwable error) {
-        if (error instanceof CompletionException && error.getCause() != null) {
-            return error.getCause();
+        Throwable current = error;
+        while (current instanceof CompletionException && current.getCause() != null) {
+            current = current.getCause();
         }
-        return error;
+        return current;
     }
 
-    private record CompletedAnswer(String answer, WorldQueryResult worldQuery) {}
+    private static String progressMessage(
+            WorldQueryTarget target,
+            AssistanceMode assistanceMode
+    ) {
+        if (target != null) {
+            return "Searching your world for " + target.displayName() + "...";
+        }
+        return switch (assistanceMode) {
+            case GOAL_PLAN -> "Building a plan from your current situation...";
+            case RECOMMENDATION -> "Checking your current situation...";
+            case GENERAL -> "Thinking...";
+        };
+    }
+
+    public static boolean isRequestInProgress() {
+        return REQUEST_IN_PROGRESS.get();
+    }
+
+    public static int conversationTurnCount() {
+        return CONVERSATION.turnCount();
+    }
+
+    public static boolean hasPriorDestination() {
+        return CONVERSATION.hasDestination();
+    }
+
+    public static int relatedFollowUpCount() {
+        return CONVERSATION.relatedFollowUpCount();
+    }
+
+    public static void resetConversation() {
+        CONVERSATION.clear();
+    }
+
+    private record CompletedAnswer(
+            String answer,
+            WorldQueryResult worldQuery,
+            boolean relatedFollowUp
+    ) {}
 }

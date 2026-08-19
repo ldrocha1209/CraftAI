@@ -203,7 +203,8 @@ test("builds concise explicit goal-planning instructions", () => {
 
     const prompt = buildCraftAiPrompt(request, null);
     assert.match(prompt, /This is an explicit goal-planning request/);
-    assert.match(prompt, /normally 3 to 7 steps/);
+    assert.match(prompt, /normally 3 to 6 steps/);
+    assert.match(prompt, /normally remain under 180 words/);
     assert.match(prompt, /Plan only for the goal the player stated/);
 });
 
@@ -277,7 +278,7 @@ test("rejects oversized or stale conversation context", () => {
             worldQuery: undefined,
             conversation: {
                 followUp: true,
-                recentTurns: [1, 2, 3, 4].map(index => ({
+                recentTurns: [1, 2, 3, 4, 5, 6].map(index => ({
                     question: `Question ${index}`,
                     answer: `Answer ${index}`
                 })),
@@ -301,7 +302,7 @@ test("rejects oversized or stale conversation context", () => {
         (error: unknown) => {
             assert.ok(error instanceof RequestValidationError);
             assert.ok(error.issues.includes(
-                "conversation.recentTurns must contain at most 3 turns."
+                "conversation.recentTurns must contain at most 5 turns."
             ));
             assert.ok(error.issues.includes(
                 "conversation.lastDestination.ageSeconds must not exceed 600."
@@ -647,4 +648,14 @@ test("removes Markdown that Minecraft chat cannot render", () => {
         formatted,
         "The desert is at X: -6020, Z: -1090.\n\n/tp @s -6020 ~ -1090"
     );
+});
+
+test("normalizes visual bullets and bounds oversized chat responses", () => {
+    const formatted = formatMinecraftResponse(
+        `• First point\n· Second point\n\n${"A long explanation. ".repeat(150)}`
+    );
+
+    assert.match(formatted, /^- First point\n- Second point/);
+    assert.ok(formatted.length <= 1_600);
+    assert.match(formatted, /Ask me for more detail if you want to continue\.$/);
 });

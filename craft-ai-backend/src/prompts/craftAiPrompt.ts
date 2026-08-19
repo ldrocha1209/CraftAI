@@ -24,6 +24,10 @@ export function buildCraftAiPrompt(
 
         ${assistanceRules(assistanceMode)}
 
+        RESPONSE BUDGET
+
+        ${responseBudget(request)}
+
         LIMITED CONVERSATION CONTEXT
 
         ${JSON.stringify(conversation, null, 2)}
@@ -31,6 +35,7 @@ export function buildCraftAiPrompt(
         CONVERSATION RULES
 
         - followUp is a deterministic signal that the current wording refers to a recent exchange. If it is false, answer independently.
+        - When followUp is true, resolve omitted subjects such as “a second,” “another one,” or “that” from the most recent relevant turn instead of asking the player to repeat an obvious subject.
         - Recent turns are bounded conversational context, not authoritative evidence about the current Minecraft world.
         - A lastDestination is a structured reference from an earlier successful Minecraft world search. It is not a fresh search for the current request.
         - lastDestination.ageSeconds states how old the earlier result is. Make its prior-session nature clear when that distinction matters.
@@ -205,7 +210,7 @@ function assistanceRules(mode: AskRequest["assistanceMode"]): string {
         return `
         This is an explicit goal-planning request.
         - Plan only for the goal the player stated; do not create additional objectives.
-        - Give a concise ordered plan that is practical to follow while playing, normally 3 to 7 steps.
+        - Give a concise ordered plan that is practical to follow while playing, normally 3 to 6 steps.
         - Adapt steps to relevant current inventory, equipment, game mode, dimension, position, crafting analysis, and world-search facts.
         - Distinguish verified current advantages or gaps from general Minecraft guidance.
         - Do not claim a structure, biome, resource, or route was found unless a current or clearly labeled prior structured destination supplies it.
@@ -217,4 +222,22 @@ function assistanceRules(mode: AskRequest["assistanceMode"]): string {
         - Answer the question directly and use current player facts only when they improve the answer.
         - Do not turn a simple question into an unsolicited recommendation checklist or multi-step objective.
         - If this is a signaled follow-up, resolve the reference using only the bounded conversation data supplied below.`;
+}
+
+function responseBudget(request: AskRequest): string {
+    const asksForDetail = /\b(?:detail|detailed|thorough|step by step|explain fully)\b/i
+        .test(request.question);
+    if (asksForDetail) {
+        return `The player explicitly requested detail. Stay focused and normally remain under 300 words.`;
+    }
+    if (request.conversation.followUp) {
+        return `Answer this follow-up directly, normally in 80 words or fewer.`;
+    }
+    if (request.assistanceMode === "GOAL_PLAN") {
+        return `Use 3 to 6 short numbered steps and normally remain under 180 words.`;
+    }
+    if (request.assistanceMode === "RECOMMENDATION") {
+        return `Lead with a one-sentence verdict, then only the most important reasons or preparation. Normally remain under 140 words.`;
+    }
+    return `Answer directly and normally remain under 100 words.`;
 }

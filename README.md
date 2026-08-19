@@ -32,7 +32,7 @@ Minecraft/Fabric context and world queries
                 ▼
         TypeScript/Express backend
                 │
-                ├── Minecraft Wiki context
+                ├── Selective, cached Minecraft Wiki context
                 └── OpenAI Responses API
                             │
                             ▼
@@ -47,8 +47,11 @@ CraftAI currently targets single-player Minecraft. World searches use Minecraft'
 - Player game mode, biome, time, dimension, and position context.
 - Aggregated inventory quantities.
 - Held items and equipped armor.
-- Basic item and crafting-recipe context.
-- Nearest village and nearest desert searches.
+- Deterministic recipe requirements, inventory comparison, and missing-material analysis.
+- Nearest biome and structure searches across supported Overworld, Nether, and End targets.
+- Deterministic distance and compass-direction guidance.
+- Player-aware recommendations, goal plans, and bounded follow-up context.
+- Readable, color-separated chat output and local `/craftai` diagnostics.
 - Minecraft Wiki retrieval and OpenAI-generated responses.
 - Automatic biome-entry messages in Survival mode.
 
@@ -65,7 +68,7 @@ Requirements:
 
 ```bash
 cd craft-ai-backend
-npm install
+npm ci
 ```
 
 Copy `craft-ai-backend/.env.example` to `craft-ai-backend/.env`, then provide the API key:
@@ -74,7 +77,7 @@ Copy `craft-ai-backend/.env.example` to `craft-ai-backend/.env`, then provide th
 OPENAI_API_KEY=your_api_key_here
 ```
 
-The example also documents optional `OPENAI_MODEL`, `HOST`, and `PORT` settings. The backend binds to `127.0.0.1:3000` by default.
+The example also documents optional model, host, port, OpenAI timeout, Wiki timeout, and Wiki-cache TTL settings. The backend binds to `127.0.0.1:3000` by default.
 
 Start the development server:
 
@@ -101,6 +104,8 @@ In the local Minecraft instance, enter a single-player world and use:
 
 ```text
 /ask How do I make a crafting table?
+/craftai help
+/craftai status
 ```
 
 The mod calls `http://localhost:3000` by default. Override it with the `CRAFTAI_BACKEND_URL` environment variable or the `craftai.backendUrl` Java system property. For example, an IntelliJ run configuration can use:
@@ -128,6 +133,8 @@ cd craft-ai-template-26.2
 
 Runtime Minecraft behavior—especially world-query intent, coordinates, dimensions, and responsiveness—also requires manual in-game verification.
 
+GitHub Actions runs both validation suites for pushes and pull requests.
+
 ## Scope
 
 CraftAI intentionally prioritizes a focused, reliable single-player assistant. Multiplayer support, autonomous gameplay, continuous coaching, health/hunger monitoring, nearby hostile-mob counting, and large long-term memory are not current goals.
@@ -136,4 +143,4 @@ Once the core roadmap is complete, development should shift toward reliability, 
 
 ## Security and Privacy
 
-The backend API key belongs only in `craft-ai-backend/.env` and must never be committed. Questions and selected Minecraft context are sent to the local backend and included in requests to the configured AI provider. Privacy disclosure and configuration improvements are tracked in the roadmap.
+The backend API key belongs only in `craft-ai-backend/.env` and must never be committed. Questions and selected Minecraft context are sent to the local backend and included in requests to the configured AI provider. See [PRIVACY.md](PRIVACY.md) for exactly what is sent, what is retained briefly in memory, and how Wiki retrieval is isolated from player-world facts.
