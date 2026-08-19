@@ -86,13 +86,14 @@ export async function generateAnswer(
 
         WORLD SEARCH RULES
 
-        - World search results are calculated directly from the player's Minecraft world.
-        - Treat provided world search results as authoritative.
-        - Only use world search results when they are provided.
-        - Do not invent coordinates or claim that a structure was found if no search result was provided.
-        - If the player asks for a location and a relevant search result is available, use the provided coordinates and distance.
-        - Do not confuse general Minecraft knowledge with actual locations in the player's world.
-        
+        - World search results are calculated directly from the player's current Minecraft world.
+        - Treat these coordinates and distances as authoritative.
+        - Coordinates are approximate navigation coordinates for the requested structure.
+        - Use the provided coordinates when answering location questions.
+        - Never invent or estimate different coordinates when search results are available.
+        - If no search was performed, do not claim that a village was located.
+        - World search results describe the player's actual world, not general Minecraft information.
+            
         Matched Minecraft item:
         
         Item ID:
