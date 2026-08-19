@@ -143,7 +143,7 @@ function parseOptionalWorldQuery(
     const target = readEnum(
         query.target,
         "worldQuery.target",
-        ["VILLAGE", "DESERT"] as const,
+        ["VILLAGE", "STRONGHOLD", "DESERT"] as const,
         issues
     ) as WorldQueryTarget;
     const status = readEnum(
@@ -153,6 +153,15 @@ function parseOptionalWorldQuery(
         issues
     ) as WorldQueryStatus;
     const dimension = readString(query.dimension, "worldQuery.dimension", issues);
+
+    const expectedKind: Record<WorldQueryTarget, WorldQueryKind> = {
+        VILLAGE: "STRUCTURE",
+        STRONGHOLD: "STRUCTURE",
+        DESERT: "BIOME"
+    };
+    if (kind !== expectedKind[target]) {
+        issues.push(`worldQuery.kind must be ${expectedKind[target]} for target ${target}.`);
+    }
 
     let position: WorldQueryPosition | undefined;
     let distanceBlocks: number | undefined;

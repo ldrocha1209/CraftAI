@@ -19,6 +19,10 @@ public final class QueryIntentDetector {
             targetLanguage(
                     WorldQueryResult.Target.DESERT,
                     "desert|deserts"
+            ),
+            targetLanguage(
+                    WorldQueryResult.Target.STRONGHOLD,
+                    "stronghold|strongholds"
             )
     );
 

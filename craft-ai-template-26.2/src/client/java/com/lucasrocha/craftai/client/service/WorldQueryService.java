@@ -24,6 +24,7 @@ public final class WorldQueryService {
 
     // Minecraft interprets structure-search radii in chunks, not blocks.
     private static final int VILLAGE_SEARCH_RADIUS_CHUNKS = 100;
+    private static final int STRONGHOLD_SEARCH_RADIUS_CHUNKS = 200;
     private static final boolean SKIP_KNOWN_STRUCTURES = false;
 
     // Biome searches use block radii. Larger sampling intervals reduce server-thread work
@@ -56,6 +57,15 @@ public final class WorldQueryService {
                     target,
                     StructureTags.VILLAGE,
                     VILLAGE_SEARCH_RADIUS_CHUNKS,
+                    SKIP_KNOWN_STRUCTURES
+            );
+            case STRONGHOLD -> findNearestStructureAsync(
+                    server,
+                    serverLevel,
+                    playerPosition,
+                    target,
+                    StructureTags.EYE_OF_ENDER_LOCATED,
+                    STRONGHOLD_SEARCH_RADIUS_CHUNKS,
                     SKIP_KNOWN_STRUCTURES
             );
             case DESERT -> findNearestBiomeAsync(

@@ -162,7 +162,7 @@ public final class AskCommand {
     ) {
         String message = target == null
                 ? "CraftAI: I can't compare multiple world locations yet. "
-                        + "Please ask for the nearest village or desert separately."
+                        + "Please ask about one location at a time."
                 : "CraftAI: I'm not sure whether you want me to search your world. "
                         + "Try asking 'Where is the nearest "
                         + target.name().toLowerCase(Locale.ROOT)

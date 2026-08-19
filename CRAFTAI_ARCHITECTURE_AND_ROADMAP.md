@@ -168,7 +168,7 @@ There is currently:
 2. `CraftAiClient` reads the question.
 3. `MinecraftDataService.findItemInQuestion()` scans the Minecraft item registry and chooses the longest item-name substring found in the question.
 4. If an item is found, `MinecraftDataService.findRecipe()` attempts to find one matching shaped crafting recipe.
-5. The client detects world-search candidates using literal `village` and `desert` substring checks.
+5. `QueryIntentDetector` classifies the question as a general question, explicit world search, or ambiguous request and selects a supported typed target only for explicit location language.
 6. When required and an IntegratedServer is present, `WorldQueryService` schedules the search on the server thread and exposes the result through a `CompletableFuture`.
 7. The client collects the current player context:
    - Game mode.
@@ -225,6 +225,7 @@ There is no partial response: the player waits for the world query, Wiki calls, 
 
 - [x] Nearest village search.
 - [x] Nearest desert-biome search.
+- [x] Nearest stronghold search.
 - [x] Server-thread scheduling through `CompletableFuture` wrappers.
 - [x] One nearest result by default.
 - [ ] Generic structure-query API.
@@ -257,7 +258,7 @@ Java and TypeScript still define their request models separately. The nested req
 
 ### World-result target selection
 
-Village and desert results now use a structured `worldQuery` object with explicit kind, target, status, dimension, position, distance, and reason fields. If both supported targets appear, the client clearly explains that comparisons are not supported yet and performs no partial search. This avoids presenting one result as if it were enough to answer a comparison.
+Supported location results use a structured `worldQuery` object with explicit kind, target, status, dimension, position, distance, and reason fields. If multiple supported targets appear, the client clearly explains that comparisons are not supported yet and performs no partial search. This avoids presenting one result as if it were enough to answer a comparison.
 
 ### World-query assumptions
 
@@ -268,12 +269,7 @@ Village and desert results now use a structured `worldQuery` object with explici
 
 ### Intent detection
 
-Simple noun checks do not distinguish:
-
-- `What is a village?`
-- `Where is the nearest village?`
-
-Both currently trigger a world search. This adds latency and potentially expensive work to general knowledge questions.
+The deterministic intent detector distinguishes tested general, explicit location, and ambiguous phrasing for supported targets. Its vocabulary is intentionally bounded, so untested natural-language variations may still be classified conservatively as general or ambiguous until added to the test table.
 
 ### Item and recipe accuracy
 
@@ -307,12 +303,8 @@ The player's question, inventory, equipment, coordinates, dimension, biome, and 
 
 ### Maintainability
 
-- `CraftAiClient.onInitializeClient()` currently owns command handling, context collection, intent checks, world-search coordination, response display, and biome notifications.
-- Village and desert search methods duplicate synchronous/asynchronous scaffolding.
-- Biome-ID cleanup is repeated and may produce inconsistent formatting.
-- Empty example mixins remain configured as required.
-- Template metadata and several imports/debug statements remain.
-- The backend has no test/build scripts beyond `npm run dev`.
+- World-query targets are intentionally registered in the Java target enum, query service, intent vocabulary/tests, TypeScript target union, and runtime validator. Each incremental target must update and validate all of these explicit boundaries together.
+- The backend has type-check and test scripts but no separate production bundle script; the current development workflow runs TypeScript directly through `tsx`.
 
 ---
 
@@ -637,6 +629,8 @@ Acceptance criteria:
 
 Goal: add practical locations through the generic query foundation.
 
+**Status: in progress — first incremental target (stronghold) complete**
+
 Add one target at a time, with tests and performance checks.
 
 Candidate biomes:
@@ -651,7 +645,7 @@ Candidate biomes:
 
 Candidate structures:
 
-- Stronghold.
+- Stronghold — first incremental target implemented and accepted.
 - Desert Pyramid.
 - Woodland Mansion.
 - Ocean Monument.
@@ -666,6 +660,37 @@ Selection rules:
 - Return one nearest result by default.
 - Do not add the full list in one change.
 - Measure expensive biome searches and keep conservative limits.
+
+Stronghold increment implementation notes:
+
+- `STRONGHOLD` is a typed `STRUCTURE` target across Java serialization, TypeScript types, runtime validation, and prompt context.
+- The IntegratedServer query uses Minecraft's `StructureTags.EYE_OF_ENDER_LOCATED`, verified in Minecraft 26.2 data to contain only `minecraft:stronghold`.
+- The search uses the generic server-thread structure path with one nearest result, a visible 200-chunk radius, and the existing Overworld-only guard.
+- Intent detection recognizes stronghold and strongholds only when paired with tested explicit location language; noun-only questions remain general and nearby phrasing is clarified.
+- Multi-target clarification is now target-neutral so it remains accurate as supported targets expand.
+- Backend validation rejects target/query-kind mismatches rather than accepting malformed structure-versus-biome context.
+
+Automated validation completed:
+
+- The Gradle `intentTest` table passes all 39 cases, including positive, negative, ambiguous, and multi-target stronghold phrasing.
+- Fabric `./gradlew intentTest build` passes.
+- Backend `npm run typecheck` passes.
+- All 10 backend contract and prompt tests pass, including found-stronghold acceptance and target/kind mismatch rejection.
+
+Manual acceptance results:
+
+- Noun-only and explanatory stronghold questions completed as general questions without launching world searches.
+- Two explicit stronghold requests each launched exactly one server-thread search, returned the same authoritative coordinates, and completed in 0.03 and 0.00 seconds.
+- Nearby and multi-target stronghold phrasing clarified immediately without starting a request or world search.
+- Existing village and desert intent behavior remained correct; the village regression search completed in 0.08 seconds.
+- A Nether stronghold request returned the Overworld-only limitation without invoking `WorldQueryService`.
+- No CraftAI search produced a server-overload warning or noticeable gameplay interruption. The session's single two-second overload warning occurred during initial world loading, several minutes before CraftAI testing.
+
+Future nearby-intent follow-up:
+
+- After repeat-query performance safeguards are established, phrases such as `Is there a stronghold nearby?` may be treated as explicit single-target searches.
+- Because `nearby` is subjective, CraftAI should report the nearest authoritative result and exact programmatic distance rather than inventing a universal nearby/not-nearby threshold.
+- Multi-target nearby questions should continue to clarify rather than launching multiple searches.
 
 ### Phase 5 — Navigation Assistance
 
