@@ -8,6 +8,8 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.server.MinecraftServer;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import java.util.concurrent.atomic.AtomicBoolean;
 import com.lucasrocha.craftai.client.data.CraftAiRequest;
@@ -70,9 +72,6 @@ public class CraftAiClient implements ClientModInitializer {
 												return 1;
 											}
 
-											CompletableFuture<WorldQueryResult> worldSearchFuture =
-													CompletableFuture.completedFuture(null);
-
 												MinecraftItemData minecraftItem =
 														MinecraftDataService.findItemInQuestion(
 																question
@@ -120,43 +119,6 @@ public class CraftAiClient implements ClientModInitializer {
 												System.out.println(
 														"CraftAI dimension: " + dimension
 												);
-											}
-
-											if (worldQueryTarget != null) {
-												WorldQueryResult.Kind queryKind =
-														worldQueryTarget == WorldQueryResult.Target.VILLAGE
-																? WorldQueryResult.Kind.STRUCTURE
-																: WorldQueryResult.Kind.BIOME;
-
-												if (player == null || server == null) {
-													worldSearchFuture = CompletableFuture.completedFuture(
-															WorldQueryResult.unsupported(
-																	queryKind,
-																	worldQueryTarget,
-																	dimension,
-																	"World search requires a single-player world."
-															)
-													);
-												} else if (!"minecraft:overworld".equals(dimension)) {
-													worldSearchFuture = CompletableFuture.completedFuture(
-															WorldQueryResult.unsupported(
-																	queryKind,
-																	worldQueryTarget,
-																	dimension,
-																	"World searches currently support the Overworld only."
-															)
-													);
-												} else if (worldQueryTarget == WorldQueryResult.Target.VILLAGE) {
-													worldSearchFuture = WorldQueryService.findNearestVillageAsync(
-															server,
-															player.blockPosition()
-													);
-												} else {
-													worldSearchFuture = WorldQueryService.findNearestDesertAsync(
-															server,
-															player.blockPosition()
-													);
-												}
 											}
 
 												Map<String, Integer> inventoryCounts = new HashMap<>();
@@ -341,11 +303,19 @@ public class CraftAiClient implements ClientModInitializer {
 													return 1;
 												}
 
-												context.getSource().sendFeedback(
-														Component.literal(
-																"CraftAI: Thinking..."
-														)
-												);
+											context.getSource().sendFeedback(
+													Component.literal(
+															"CraftAI: Thinking..."
+													)
+											);
+
+											CompletableFuture<WorldQueryResult> worldSearchFuture =
+													startWorldSearch(
+															server,
+															player,
+															dimension,
+															worldQueryTarget
+													);
 
 													worldSearchFuture
 															.thenCompose(worldSearchResult -> {
@@ -449,6 +419,46 @@ public class CraftAiClient implements ClientModInitializer {
 			}
 		});
 		}
+
+	private static CompletableFuture<WorldQueryResult> startWorldSearch(
+			MinecraftServer server,
+			LocalPlayer player,
+			String dimension,
+			WorldQueryResult.Target target
+	) {
+		if (target == null) {
+			return CompletableFuture.completedFuture(null);
+		}
+
+		if (player == null || server == null) {
+			return CompletableFuture.completedFuture(
+					WorldQueryResult.unsupported(
+							target.getKind(),
+							target,
+							dimension,
+							"World search requires a single-player world."
+					)
+			);
+		}
+
+		if (!"minecraft:overworld".equals(dimension)) {
+			return CompletableFuture.completedFuture(
+					WorldQueryResult.unsupported(
+							target.getKind(),
+							target,
+							dimension,
+							"World searches currently support the Overworld only."
+					)
+			);
+		}
+
+		return WorldQueryService.findNearestAsync(
+				server,
+				server.overworld(),
+				player.blockPosition(),
+				target
+		);
+	}
 
 	private static WorldQueryResult.Target selectWorldQueryTarget(
 			int villageIndex,

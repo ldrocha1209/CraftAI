@@ -44,17 +44,16 @@ Never inspect, print, copy, or commit secret values from `.env`. It is acceptabl
 
 ## Current Development Priority
 
-**Roadmap Phase 0 — Stabilize the Existing Boundary** is complete. The current next milestone is **Phase 1 — Refactor the World Query Foundation**.
+**Roadmap Phase 0 — Stabilize the Existing Boundary** and **Phase 1 — Refactor the World Query Foundation** are complete. The current next milestone is **Phase 2 — Clean and Separate Current Responsibilities**.
 
 Unless the user explicitly selects another task, prioritize work in this order:
 
-1. Refactor village/desert searches onto generic structure/biome helpers.
+1. Clean and separate `CraftAiClient` responsibilities.
 2. Improve and test world-query intent detection.
-3. Clean and separate `CraftAiClient` responsibilities.
-4. Add deterministic navigation calculations.
-5. Correct recipe extraction and inventory comparison.
-6. Add world-query targets incrementally.
-7. Add contextual planning and limited conversation context only after underlying facts are reliable.
+3. Add deterministic navigation calculations.
+4. Correct recipe extraction and inventory comparison.
+5. Add world-query targets incrementally.
+6. Add contextual planning and limited conversation context only after underlying facts are reliable.
 
 Do not skip foundational phases merely to add visible features unless the user knowingly chooses that tradeoff.
 

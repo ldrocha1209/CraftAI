@@ -481,23 +481,51 @@ Acceptance criteria:
 
 Goal: remove village/desert implementation duplication without changing behavior.
 
+**Status: complete**
+
 Tasks:
 
-- Introduce generic synchronous helpers conceptually equivalent to:
+- [x] Introduce generic synchronous helpers conceptually equivalent to:
   - `findNearestStructure(...)`
   - `findNearestBiome(...)`
-- Provide asynchronous wrappers that schedule work through the IntegratedServer.
-- Preserve one nearest result.
-- Carry query kind, target, dimension, coordinates, distance, and found/not-found status as data rather than preformatted prose.
-- Reject or explicitly scope unsupported cross-dimension searches.
-- Keep search radius and sampling parameters visible and documented.
+- [x] Provide asynchronous wrappers that schedule work through the IntegratedServer.
+- [x] Route village and desert through a single target-based entry point.
+- [x] Preserve one nearest result.
+- [x] Carry query kind, target, dimension, coordinates, distance, and found/not-found status as data rather than preformatted prose.
+- [x] Reject or explicitly scope unsupported cross-dimension searches.
+- [x] Keep search radius and sampling parameters visible and documented.
+- [x] Prevent a second request from starting another world search while CraftAI is already processing one.
+
+Implementation notes:
+
+- `WorldQueryService.findNearestAsync(...)` selects the generic structure or biome path from the typed target.
+- Both asynchronous paths use one shared IntegratedServer scheduler and emit start, duration, and failure logs.
+- The caller passes an explicit `ServerLevel`; the current client deliberately passes the Overworld only after checking the player's dimension.
+- Existing search settings remain unchanged: villages use a 100-chunk radius; deserts use a 6,400-block radius with 128-block horizontal and 64-block vertical sampling intervals.
+- Intent detection remains deliberately unchanged until Phase 3, so noun-only questions such as `What is a village?` are still a known false-positive search case.
 
 Acceptance criteria:
 
 - Village and desert use the generic foundation.
 - Searches do not execute on the render/client thread.
-- General knowledge questions do not trigger searches.
+- Questions without a supported location noun do not trigger searches. Full location-intent discrimination remains Phase 3 work.
 - No noticeable gameplay freeze occurs during supported searches.
+
+Automated validation completed:
+
+- Fabric `./gradlew build` passes.
+- Backend `npm run typecheck` passes.
+- All 8 backend contract and prompt tests pass.
+
+Manual acceptance results:
+
+- Village searches returned authoritative results and completed in 0.02–0.22 seconds during the final test session.
+- Desert searches returned authoritative approximate biome coordinates and completed in 1.36–2.16 seconds.
+- The deliberate rapid-request test started only one desert search and returned `CraftAI is already thinking...` for the second request.
+- One 2.16-second desert run produced a 2.13-second IntegratedServer `Can't keep up` warning, but no noticeable gameplay issue was observed. Keep monitoring this when adding biome targets rather than reducing sampling accuracy preemptively.
+- Normal questions without a supported location noun, multi-target questions, and non-Overworld requests did not launch a world search.
+- The non-Overworld request returned an appropriate limitation without querying the Overworld.
+- `What is a village?` still returns a useful explanation but also performs a village search; this known noun-only intent limitation is explicitly deferred to Phase 3.
 
 ### Phase 2 — Clean and Separate Current Responsibilities
 

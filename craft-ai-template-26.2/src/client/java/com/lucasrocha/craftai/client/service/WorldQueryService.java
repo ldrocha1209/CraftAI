@@ -1,204 +1,273 @@
 package com.lucasrocha.craftai.client.service;
 
 import com.lucasrocha.craftai.client.data.WorldQueryResult;
+import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.StructureTags;
+import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.Biomes;
+import net.minecraft.world.level.levelgen.structure.Structure;
+import org.slf4j.Logger;
+
 import java.util.concurrent.CompletableFuture;
-
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
-public class WorldQueryService {
+public final class WorldQueryService {
 
+    private static final Logger LOGGER = LogUtils.getLogger();
+
+    // Minecraft interprets structure-search radii in chunks, not blocks.
+    private static final int VILLAGE_SEARCH_RADIUS_CHUNKS = 100;
+    private static final boolean SKIP_KNOWN_STRUCTURES = false;
+
+    // Biome searches use block radii. Larger sampling intervals reduce server-thread work
+    // at the cost of returning an approximate point within the target biome.
     private static final int DESERT_SEARCH_RADIUS_BLOCKS = 6400;
     private static final int DESERT_HORIZONTAL_INTERVAL_BLOCKS = 128;
     private static final int DESERT_VERTICAL_INTERVAL_BLOCKS = 64;
 
-    public static WorldQueryResult findNearestVillage(
+    private WorldQueryService() {}
+
+    public static CompletableFuture<WorldQueryResult> findNearestAsync(
             MinecraftServer server,
-            BlockPos playerPosition
+            ServerLevel serverLevel,
+            BlockPos playerPosition,
+            WorldQueryResult.Target target
     ) {
-
-        if (server == null || playerPosition == null) {
-            return WorldQueryResult.unsupported(
-                    WorldQueryResult.Kind.STRUCTURE,
-                    WorldQueryResult.Target.VILLAGE,
-                    "UNKNOWN",
-                    "A single-player IntegratedServer and player position are required."
-            );
+        if (target == null) {
+            return CompletableFuture.completedFuture(null);
         }
 
-        ServerLevel serverLevel = server.overworld();
-        String dimension = serverLevel.dimension().identifier().toString();
+        if (server == null || serverLevel == null || playerPosition == null) {
+            return CompletableFuture.completedFuture(unsupported(target, serverLevel));
+        }
 
-        BlockPos villagePos = serverLevel.findNearestMapStructure(
-                StructureTags.VILLAGE,
+        return switch (target) {
+            case VILLAGE -> findNearestStructureAsync(
+                    server,
+                    serverLevel,
+                    playerPosition,
+                    target,
+                    StructureTags.VILLAGE,
+                    VILLAGE_SEARCH_RADIUS_CHUNKS,
+                    SKIP_KNOWN_STRUCTURES
+            );
+            case DESERT -> findNearestBiomeAsync(
+                    server,
+                    serverLevel,
+                    playerPosition,
+                    target,
+                    biomeHolder -> biomeHolder.is(Biomes.DESERT),
+                    DESERT_SEARCH_RADIUS_BLOCKS,
+                    DESERT_HORIZONTAL_INTERVAL_BLOCKS,
+                    DESERT_VERTICAL_INTERVAL_BLOCKS
+            );
+        };
+    }
+
+    public static WorldQueryResult findNearestStructure(
+            ServerLevel serverLevel,
+            BlockPos playerPosition,
+            WorldQueryResult.Target target,
+            TagKey<Structure> structureTag,
+            int searchRadiusChunks,
+            boolean skipKnownStructures
+    ) {
+        requireSearchInputs(serverLevel, playerPosition, target);
+        if (target.getKind() != WorldQueryResult.Kind.STRUCTURE) {
+            throw new IllegalArgumentException("A structure search requires a STRUCTURE target.");
+        }
+        if (structureTag == null || searchRadiusChunks <= 0) {
+            throw new IllegalArgumentException("A structure tag and positive search radius are required.");
+        }
+
+        BlockPos resultPosition = serverLevel.findNearestMapStructure(
+                structureTag,
                 playerPosition,
-                100,
-                false
+                searchRadiusChunks,
+                skipKnownStructures
         );
 
-        if (villagePos == null) {
+        if (resultPosition == null) {
             return WorldQueryResult.notFound(
-                    WorldQueryResult.Kind.STRUCTURE,
-                    WorldQueryResult.Target.VILLAGE,
-                    dimension
+                    target.getKind(),
+                    target,
+                    dimensionId(serverLevel)
             );
         }
 
-        int distance = (int) Math.round(
-                Math.sqrt(playerPosition.distSqr(villagePos))
-        );
+        return foundResult(serverLevel, playerPosition, resultPosition, target);
+    }
 
-        return WorldQueryResult.found(
-                WorldQueryResult.Kind.STRUCTURE,
-                WorldQueryResult.Target.VILLAGE,
-                dimension,
-                villagePos.getX(),
-                villagePos.getZ(),
-                distance
+    public static CompletableFuture<WorldQueryResult> findNearestStructureAsync(
+            MinecraftServer server,
+            ServerLevel serverLevel,
+            BlockPos playerPosition,
+            WorldQueryResult.Target target,
+            TagKey<Structure> structureTag,
+            int searchRadiusChunks,
+            boolean skipKnownStructures
+    ) {
+        return runOnServerThread(
+                server,
+                target,
+                () -> findNearestStructure(
+                        serverLevel,
+                        playerPosition,
+                        target,
+                        structureTag,
+                        searchRadiusChunks,
+                        skipKnownStructures
+                )
         );
     }
 
-    public static CompletableFuture<WorldQueryResult> findNearestVillageAsync(
-            MinecraftServer server,
-            BlockPos playerPosition
+    public static WorldQueryResult findNearestBiome(
+            ServerLevel serverLevel,
+            BlockPos playerPosition,
+            WorldQueryResult.Target target,
+            Predicate<Holder<Biome>> biomePredicate,
+            int searchRadiusBlocks,
+            int horizontalIntervalBlocks,
+            int verticalIntervalBlocks
     ) {
+        requireSearchInputs(serverLevel, playerPosition, target);
+        if (target.getKind() != WorldQueryResult.Kind.BIOME) {
+            throw new IllegalArgumentException("A biome search requires a BIOME target.");
+        }
+        if (biomePredicate == null
+                || searchRadiusBlocks <= 0
+                || horizontalIntervalBlocks <= 0
+                || verticalIntervalBlocks <= 0) {
+            throw new IllegalArgumentException("A biome predicate and positive search settings are required.");
+        }
 
-        CompletableFuture<WorldQueryResult> future =
-                new CompletableFuture<>();
+        var result = serverLevel.findClosestBiome3d(
+                biomePredicate,
+                playerPosition,
+                searchRadiusBlocks,
+                horizontalIntervalBlocks,
+                verticalIntervalBlocks
+        );
 
-        if (server == null || playerPosition == null) {
-            future.complete(findNearestVillage(server, playerPosition));
+        if (result == null) {
+            return WorldQueryResult.notFound(
+                    target.getKind(),
+                    target,
+                    dimensionId(serverLevel)
+            );
+        }
+
+        return foundResult(serverLevel, playerPosition, result.getFirst(), target);
+    }
+
+    public static CompletableFuture<WorldQueryResult> findNearestBiomeAsync(
+            MinecraftServer server,
+            ServerLevel serverLevel,
+            BlockPos playerPosition,
+            WorldQueryResult.Target target,
+            Predicate<Holder<Biome>> biomePredicate,
+            int searchRadiusBlocks,
+            int horizontalIntervalBlocks,
+            int verticalIntervalBlocks
+    ) {
+        return runOnServerThread(
+                server,
+                target,
+                () -> findNearestBiome(
+                        serverLevel,
+                        playerPosition,
+                        target,
+                        biomePredicate,
+                        searchRadiusBlocks,
+                        horizontalIntervalBlocks,
+                        verticalIntervalBlocks
+                )
+        );
+    }
+
+    private static CompletableFuture<WorldQueryResult> runOnServerThread(
+            MinecraftServer server,
+            WorldQueryResult.Target target,
+            Supplier<WorldQueryResult> search
+    ) {
+        CompletableFuture<WorldQueryResult> future = new CompletableFuture<>();
+
+        if (server == null) {
+            future.completeExceptionally(
+                    new IllegalArgumentException("An IntegratedServer is required for world searches.")
+            );
             return future;
         }
 
         server.execute(() -> {
+            long startedAt = System.nanoTime();
+            LOGGER.info("CraftAI: Running {} search on server thread", target.name().toLowerCase());
 
             try {
-
-                System.out.println(
-                        "CraftAI: Running village search on server thread"
+                WorldQueryResult result = search.get();
+                double durationSeconds = (System.nanoTime() - startedAt) / 1_000_000_000.0;
+                LOGGER.info(
+                        "CraftAI: {} search completed in {} seconds",
+                        target.name().toLowerCase(),
+                        String.format("%.2f", durationSeconds)
                 );
-
-                WorldQueryResult village =
-                        findNearestVillage(
-                                server,
-                                playerPosition
-                        );
-
-                future.complete(village);
-
-            } catch (Exception e) {
-
-                future.completeExceptionally(e);
+                future.complete(result);
+            } catch (Exception error) {
+                LOGGER.error("CraftAI: {} search failed", target.name().toLowerCase(), error);
+                future.completeExceptionally(error);
             }
         });
 
         return future;
     }
 
-    public static WorldQueryResult findNearestDesert(
-            MinecraftServer server,
-            BlockPos playerPosition
+    private static WorldQueryResult foundResult(
+            ServerLevel serverLevel,
+            BlockPos playerPosition,
+            BlockPos resultPosition,
+            WorldQueryResult.Target target
     ) {
-
-        if (server == null || playerPosition == null) {
-            return WorldQueryResult.unsupported(
-                    WorldQueryResult.Kind.BIOME,
-                    WorldQueryResult.Target.DESERT,
-                    "UNKNOWN",
-                    "A single-player IntegratedServer and player position are required."
-            );
-        }
-
-        ServerLevel serverLevel = server.overworld();
-        String dimension = serverLevel.dimension().identifier().toString();
-
-        Predicate<Holder<Biome>> desertPredicate =
-                biomeHolder -> biomeHolder.is(Biomes.DESERT);
-
-        var desertResult = serverLevel.findClosestBiome3d(
-                desertPredicate,
-                playerPosition,
-                DESERT_SEARCH_RADIUS_BLOCKS,
-                DESERT_HORIZONTAL_INTERVAL_BLOCKS,
-                DESERT_VERTICAL_INTERVAL_BLOCKS
-        );
-
-        if (desertResult == null) {
-            return WorldQueryResult.notFound(
-                    WorldQueryResult.Kind.BIOME,
-                    WorldQueryResult.Target.DESERT,
-                    dimension
-            );
-        }
-
-        BlockPos desertPos = desertResult.getFirst();
-
-        int distance = (int) Math.round(
-                Math.sqrt(playerPosition.distSqr(desertPos))
-        );
+        int distance = (int) Math.round(Math.sqrt(playerPosition.distSqr(resultPosition)));
 
         return WorldQueryResult.found(
-                WorldQueryResult.Kind.BIOME,
-                WorldQueryResult.Target.DESERT,
-                dimension,
-                desertPos.getX(),
-                desertPos.getZ(),
+                target.getKind(),
+                target,
+                dimensionId(serverLevel),
+                resultPosition.getX(),
+                resultPosition.getZ(),
                 distance
         );
     }
 
-    public static CompletableFuture<WorldQueryResult> findNearestDesertAsync(
-            MinecraftServer server,
-            BlockPos playerPosition
+    private static WorldQueryResult unsupported(
+            WorldQueryResult.Target target,
+            ServerLevel serverLevel
     ) {
+        return WorldQueryResult.unsupported(
+                target.getKind(),
+                target,
+                serverLevel == null ? "UNKNOWN" : dimensionId(serverLevel),
+                "A single-player IntegratedServer, server level, and player position are required."
+        );
+    }
 
-        CompletableFuture<WorldQueryResult> future =
-                new CompletableFuture<>();
-
-        if (server == null || playerPosition == null) {
-            future.complete(findNearestDesert(server, playerPosition));
-            return future;
+    private static void requireSearchInputs(
+            ServerLevel serverLevel,
+            BlockPos playerPosition,
+            WorldQueryResult.Target target
+    ) {
+        if (serverLevel == null || playerPosition == null || target == null) {
+            throw new IllegalArgumentException("A server level, player position, and target are required.");
         }
+    }
 
-        server.execute(() -> {
-
-            try {
-
-                long startedAt = System.nanoTime();
-
-                System.out.println(
-                        "CraftAI: Running desert search on server thread"
-                );
-
-                WorldQueryResult desert =
-                        findNearestDesert(
-                                server,
-                                playerPosition
-                        );
-
-                double durationSeconds =
-                        (System.nanoTime() - startedAt) / 1_000_000_000.0;
-
-                System.out.printf(
-                        "CraftAI: Desert search completed in %.2f seconds%n",
-                        durationSeconds
-                );
-
-                future.complete(desert);
-
-            } catch (Exception e) {
-
-                future.completeExceptionally(e);
-            }
-        });
-
-        return future;
+    private static String dimensionId(ServerLevel serverLevel) {
+        return serverLevel.dimension().identifier().toString();
     }
 }

@@ -8,8 +8,18 @@ public class WorldQueryResult {
     }
 
     public enum Target {
-        VILLAGE,
-        DESERT
+        VILLAGE(Kind.STRUCTURE),
+        DESERT(Kind.BIOME);
+
+        private final Kind kind;
+
+        Target(Kind kind) {
+            this.kind = kind;
+        }
+
+        public Kind getKind() {
+            return kind;
+        }
     }
 
     public enum Status {
