@@ -11,7 +11,7 @@ This document is the workspace-level source of truth for CraftAI. It combines:
 
 It intentionally distinguishes between **implemented behavior** and **planned behavior**. Future work should update this document when a milestone is completed or when an architectural decision changes.
 
-Last code review baseline: August 18, 2026.
+Last code review baseline: August 19, 2026.
 
 ---
 
@@ -167,7 +167,7 @@ There is currently:
 1. The player runs `/ask <question>`.
 2. `CraftAiClient` reads the question.
 3. `MinecraftDataService.findItemInQuestion()` scans the Minecraft item registry and chooses the longest item-name substring found in the question.
-4. If an item is found, `MinecraftDataService.findRecipe()` attempts to find one matching shaped crafting recipe.
+4. If an item is found, `MinecraftDataService.findRecipe()` matches synchronized shaped and shapeless crafting displays by actual output and deterministically compares their requirements with the aggregated inventory.
 5. `QueryIntentDetector` classifies the question as a general question, explicit world search, or ambiguous request and selects a supported typed target only for explicit location language.
 6. When required and an IntegratedServer is present, `WorldQueryService` schedules the search on the server thread and exposes the result through a `CompletableFuture`.
 7. The client collects the current player context:
@@ -215,11 +215,11 @@ There is no partial response: the player waits for the world query, Wiki calls, 
 
 - [x] Basic item-name recognition from a question.
 - [x] Item ID, display name, and maximum stack size.
-- [x] Partial shaped-recipe extraction.
-- [ ] Reliable recipe lookup by recipe output.
-- [ ] Shapeless recipe extraction.
-- [ ] Full ingredient-alternative representation.
-- [ ] Inventory-versus-recipe comparison.
+- [x] Shaped-recipe extraction.
+- [x] Reliable recipe lookup by recipe output.
+- [x] Shapeless recipe extraction.
+- [x] Ingredient-alternative and tag representation for supported vanilla displays.
+- [x] Deterministic inventory-versus-recipe comparison without double-counting.
 
 ### World queries
 
@@ -277,12 +277,9 @@ The deterministic intent detector distinguishes tested general, explicit locatio
 ### Item and recipe accuracy
 
 - Item recognition is based on a substring scan and can produce false positives.
-- Recipe matching uses the recipe ID rather than verifying the recipe output.
-- Only shaped recipe displays are extracted.
-- Composite ingredient slots keep only the first alternative.
-- The backend recipe JSON uses dynamic ingredient properties beside `recipeId` instead of a stable `ingredients` object.
-
-These limitations prevent trustworthy inventory-aware crafting answers today.
+- Recipe analysis covers synchronized shaped and shapeless crafting displays. Specialized or component-sensitive displays are intentionally omitted rather than treated as ordinary interchangeable ingredients.
+- When multiple recipes produce the same item, CraftAI selects the recipe with the fewest currently missing ingredients, then the larger output count, then a stable recipe-ID tie break. It does not yet compare or explain every alternative recipe.
+- Craftability describes one execution of the selected recipe; multi-craft quantity questions are not yet modeled.
 
 ### Backend reliability and latency
 
@@ -744,6 +741,8 @@ Manual acceptance results:
 
 Goal: answer crafting-sufficiency questions from Minecraft data rather than prompt guesswork.
 
+**Status: complete — automated and in-game acceptance passed**
+
 Tasks:
 
 - Match recipes by actual output item.
@@ -765,6 +764,31 @@ Acceptance criteria:
 - Craftability is based on the real recipe and real inventory.
 - The response clearly distinguishes what the player has from what is missing.
 - The AI is not asked to perform inventory arithmetic that code can perform reliably.
+
+Implementation notes:
+
+- Recipe selection now matches the actual displayed output item and preserves its output count.
+- Shaped and shapeless displays use the same structured requirement model. Equivalent slots are merged into required quantities.
+- Composite and tag ingredients retain all ordinary item alternatives and tag IDs. Component-sensitive or otherwise specialized ingredient displays are skipped rather than simplified inaccurately.
+- A deterministic max-flow allocation compares aggregated inventory across overlapping alternatives without using one inventory item twice.
+- Each requirement reports alternatives, tags, required count, allocated available items/count, and missing count. The recipe also reports authoritative craftability and total missing count.
+- The backend validates the Java-produced analysis against the matched output and supplied inventory before adding explicit no-recalculation rules to the prompt.
+
+Automated validation completed:
+
+- `CraftingAnalysisServiceTest` passes 6 exact, missing, alternative/tag, overlap, quantity-merging, and best-recipe scenarios.
+- The representative Java-compatible backend fixture covers the complete structured recipe contract; backend regression tests also reject output mismatches, over-allocation, and inconsistent missing totals.
+- Backend `npm run typecheck` and all 19 tests pass.
+- Fabric `./gradlew craftingTest intentTest navigationTest build` passes, including all existing intent and navigation regressions.
+
+Manual acceptance results:
+
+- Exact diamond-sword materials were reported craftable with two diamonds and one stick; the one-diamond case reported exactly one missing diamond.
+- One oak log was correctly identified as producing four oak planks through a shapeless recipe.
+- Four oak and four birch planks were combined as interchangeable materials for one chest without double-counting.
+- An enchanting-table check correctly distinguished the available book, two diamonds, and three obsidian from the one missing obsidian.
+- With only two bamboo available, recipe selection chose the usable bamboo-to-stick recipe and preserved its one-stick output count.
+- All six requests completed in approximately two to three seconds with no CraftAI exceptions, HTTP errors, failed requests, or stuck in-progress state in the accepted session.
 
 ### Phase 7 — Player-Aware Recommendations
 

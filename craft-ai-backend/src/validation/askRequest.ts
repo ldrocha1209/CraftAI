@@ -32,7 +32,12 @@ export function parseAskRequest(value: unknown): AskRequest {
     const question = readString(body.question, "question", issues, true);
     const player = parsePlayerContext(body.player, issues);
     const matchedItem = parseOptionalMatchedItem(body.matchedItem, issues);
-    const recipe = parseOptionalRecipe(body.recipe, issues);
+    const recipe = parseOptionalRecipe(
+        body.recipe,
+        matchedItem,
+        player.inventory,
+        issues
+    );
     const worldQuery = parseOptionalWorldQuery(body.worldQuery, player.position, issues);
 
     if (issues.length > 0) {
@@ -117,6 +122,8 @@ function parseOptionalMatchedItem(
 
 function parseOptionalRecipe(
     value: unknown,
+    matchedItem: MatchedItem | undefined,
+    inventory: Record<string, number>,
     issues: string[]
 ): MinecraftRecipe | undefined {
     if (value === undefined || value === null) {
@@ -124,11 +131,143 @@ function parseOptionalRecipe(
     }
 
     const recipe = readRecord(value, "recipe", issues);
+    const output = readRecord(recipe.output, "recipe.output", issues);
+    const parsedOutput = {
+        itemId: readString(output.itemId, "recipe.output.itemId", issues),
+        count: readPositiveInteger(output.count, "recipe.output.count", issues)
+    };
+    const requirements = readArray(
+        recipe.requirements,
+        "recipe.requirements",
+        issues
+    ).map((requirement, index) =>
+        parseRecipeRequirement(requirement, index, issues)
+    );
+    const craftable = readBoolean(recipe.craftable, "recipe.craftable", issues);
+    const totalMissing = readNonNegativeInteger(
+        recipe.totalMissing,
+        "recipe.totalMissing",
+        issues
+    );
+
+    validateRecipeConsistency(
+        matchedItem,
+        inventory,
+        parsedOutput,
+        requirements,
+        craftable,
+        totalMissing,
+        issues
+    );
 
     return {
         recipeId: readString(recipe.recipeId, "recipe.recipeId", issues),
-        ingredients: readCountMap(recipe.ingredients, "recipe.ingredients", issues)
+        type: readEnum(
+            recipe.type,
+            "recipe.type",
+            ["SHAPED", "SHAPELESS"] as const,
+            issues
+        ),
+        output: parsedOutput,
+        requirements,
+        craftable,
+        totalMissing
     };
+}
+
+function parseRecipeRequirement(
+    value: unknown,
+    index: number,
+    issues: string[]
+): MinecraftRecipe["requirements"][number] {
+    const path = `recipe.requirements[${index}]`;
+    const requirement = readRecord(value, path, issues);
+    return {
+        alternatives: readStringArray(
+            requirement.alternatives,
+            `${path}.alternatives`,
+            issues,
+            true
+        ),
+        tags: readStringArray(requirement.tags, `${path}.tags`, issues),
+        requiredCount: readPositiveInteger(
+            requirement.requiredCount,
+            `${path}.requiredCount`,
+            issues
+        ),
+        availableCount: readNonNegativeInteger(
+            requirement.availableCount,
+            `${path}.availableCount`,
+            issues
+        ),
+        availableItems: readCountMap(
+            requirement.availableItems,
+            `${path}.availableItems`,
+            issues
+        ),
+        missingCount: readNonNegativeInteger(
+            requirement.missingCount,
+            `${path}.missingCount`,
+            issues
+        )
+    };
+}
+
+function validateRecipeConsistency(
+    matchedItem: MatchedItem | undefined,
+    inventory: Record<string, number>,
+    output: MinecraftRecipe["output"],
+    requirements: MinecraftRecipe["requirements"],
+    craftable: boolean,
+    totalMissing: number,
+    issues: string[]
+): void {
+    if (!matchedItem) {
+        issues.push("recipe requires matchedItem context.");
+    } else if (output.itemId !== matchedItem.id) {
+        issues.push("recipe.output.itemId must match matchedItem.id.");
+    }
+    if (requirements.length === 0) {
+        issues.push("recipe.requirements must contain at least one requirement.");
+    }
+
+    const allocatedInventory: Record<string, number> = {};
+    let calculatedMissing = 0;
+    requirements.forEach((requirement, index) => {
+        const path = `recipe.requirements[${index}]`;
+        const alternatives = new Set(requirement.alternatives);
+        if (alternatives.size !== requirement.alternatives.length) {
+            issues.push(`${path}.alternatives must not contain duplicates.`);
+        }
+        const availableItemTotal = Object.values(requirement.availableItems)
+            .reduce((sum, count) => sum + count, 0);
+        if (availableItemTotal !== requirement.availableCount) {
+            issues.push(`${path}.availableCount must equal availableItems total.`);
+        }
+        if (requirement.availableCount + requirement.missingCount
+            !== requirement.requiredCount) {
+            issues.push(`${path} available and missing counts must equal requiredCount.`);
+        }
+        for (const [itemId, count] of Object.entries(requirement.availableItems)) {
+            if (!alternatives.has(itemId)) {
+                issues.push(`${path}.availableItems contains a non-alternative item.`);
+            }
+            allocatedInventory[itemId] = (allocatedInventory[itemId] ?? 0) + count;
+        }
+        calculatedMissing += requirement.missingCount;
+    });
+
+    for (const [itemId, allocated] of Object.entries(allocatedInventory)) {
+        if (allocated > (inventory[itemId] ?? 0)) {
+            issues.push(`recipe allocates more ${itemId} than the player inventory contains.`);
+        }
+    }
+    if (calculatedMissing !== totalMissing) {
+        issues.push("recipe.totalMissing must equal the requirement missing total.");
+    }
+    if (craftable !== (totalMissing === 0)) {
+        issues.push("recipe.craftable must be true exactly when totalMissing is zero.");
+    }
 }
 
 function parseOptionalWorldQuery(
@@ -328,6 +467,42 @@ function readOptionalString(
     return readString(value, path, issues);
 }
 
+function readBoolean(value: unknown, path: string, issues: string[]): boolean {
+    if (typeof value !== "boolean") {
+        issues.push(`${path} must be a boolean.`);
+        return false;
+    }
+
+    return value;
+}
+
+function readArray(value: unknown, path: string, issues: string[]): unknown[] {
+    if (!Array.isArray(value)) {
+        issues.push(`${path} must be an array.`);
+        return [];
+    }
+
+    return value;
+}
+
+function readStringArray(
+    value: unknown,
+    path: string,
+    issues: string[],
+    requireNonEmpty = false
+): string[] {
+    const values = readArray(value, path, issues);
+    const strings = values.map((entry, index) =>
+        readString(entry, `${path}[${index}]`, issues, true)
+    );
+
+    if (requireNonEmpty && strings.length === 0) {
+        issues.push(`${path} must contain at least one item ID.`);
+    }
+
+    return strings;
+}
+
 function readInteger(value: unknown, path: string, issues: string[]): number {
     if (typeof value !== "number" || !Number.isSafeInteger(value)) {
         issues.push(`${path} must be a safe integer.`);
@@ -346,6 +521,20 @@ function readNonNegativeInteger(
 
     if (number < 0) {
         issues.push(`${path} must not be negative.`);
+    }
+
+    return number;
+}
+
+function readPositiveInteger(
+    value: unknown,
+    path: string,
+    issues: string[]
+): number {
+    const number = readInteger(value, path, issues);
+
+    if (number <= 0) {
+        issues.push(`${path} must be positive.`);
     }
 
     return number;

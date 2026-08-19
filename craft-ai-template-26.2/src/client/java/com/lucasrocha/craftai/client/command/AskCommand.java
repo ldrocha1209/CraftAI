@@ -79,7 +79,10 @@ public final class AskCommand {
             MinecraftItemData matchedItem = MinecraftDataService.findItemInQuestion(question);
             MinecraftRecipeData recipe = matchedItem == null
                     ? null
-                    : MinecraftDataService.findRecipe(matchedItem.getId());
+                    : MinecraftDataService.findRecipe(
+                            matchedItem.getId(),
+                            playerContext.getInventory()
+                    );
 
             startWorldSearch(
                     minecraft.getSingleplayerServer(),

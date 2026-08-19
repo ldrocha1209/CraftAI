@@ -78,9 +78,20 @@ export function buildCraftAiPrompt(
 
         ${matchedItem ? JSON.stringify(matchedItem, null, 2) : "No item was matched."}
 
-        Recipe information:
+        CRAFTING ANALYSIS:
 
         ${recipe ? JSON.stringify(recipe, null, 2) : "No recipe data available."}
+
+        CRAFTING RULES
+
+        - Crafting analysis is calculated from an actual Minecraft crafting recipe and the player's aggregated inventory.
+        - Treat the recipe output, required counts, available counts, allocated available items, missing counts, total missing count, and craftable status as authoritative.
+        - The output count is the number of items produced by one execution of the recipe.
+        - Items listed together as alternatives are interchangeable for that requirement. Tags identify the Minecraft registry group from which those alternatives came.
+        - availableItems is a deterministic allocation of inventory across requirements and does not double-count the same inventory item.
+        - Explain these facts naturally, but do not recalculate, alter, contradict, or replace them.
+        - Never say the player can craft the item when craftable is false. Clearly identify the supplied missing materials instead.
+        - If no crafting analysis is available, do not infer craftability from general knowledge or from inventory alone.
 
 
         WIKI INFORMATION
