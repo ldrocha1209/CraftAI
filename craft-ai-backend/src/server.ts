@@ -1,6 +1,7 @@
 import express from "express";
 import "dotenv/config";
 import askRouter from "./routes/ask.js";
+import { BackendError } from "./services/backendError.js";
 
 const app = express();
 const port = parsePort(process.env.PORT);
@@ -8,15 +9,31 @@ const host = process.env.HOST ?? "127.0.0.1";
 
 app.use(express.json());
 
-app.get("/", (req, res) => {
+app.get("/", (_req, res) => {
     res.json({
-        message: "CraftAI backend is running!"
+        status: "ok",
+        service: "craftai-backend"
     });
 });
 
 app.use("/ask", askRouter);
 
-app.use((error: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((
+    error: unknown,
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction
+) => {
+    if (error instanceof BackendError) {
+        console.error(`CraftAI service error (${error.code}): ${error.message}`);
+        res.status(error.status).json({
+            error: {
+                code: error.code,
+                message: error.publicMessage
+            }
+        });
+        return;
+    }
     console.error("CraftAI request failed:", error);
     res.status(500).json({
         error: {

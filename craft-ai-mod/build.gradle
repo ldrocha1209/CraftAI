@@ -1,0 +1,122 @@
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+	id 'maven-publish'
+}
+
+repositories {
+	// Loom supplies the repositories required by Minecraft and Fabric.
+}
+
+loom {
+	splitEnvironmentSourceSets()
+
+	mods {
+		"craft-ai" {
+			sourceSet sourceSets.main
+			sourceSet sourceSets.client
+		}
+	}
+}
+
+sourceSets {
+	intentTest {
+		compileClasspath += sourceSets.client.output
+		compileClasspath += sourceSets.client.compileClasspath
+		runtimeClasspath += output + compileClasspath
+	}
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+}
+
+processResources {
+	def version = project.version
+	inputs.property "version", version
+
+	filesMatching("fabric.mod.json") {
+		expand "version": version
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 25
+}
+
+tasks.register("intentTest", JavaExec) {
+	group = "verification"
+	description = "Runs the deterministic world-query intent test table."
+	dependsOn intentTestClasses
+	classpath = sourceSets.intentTest.runtimeClasspath
+	mainClass = "com.lucasrocha.craftai.client.intent.QueryIntentDetectorTest"
+}
+
+tasks.register("navigationTest", JavaExec) {
+	group = "verification"
+	description = "Runs deterministic navigation calculation tests."
+	dependsOn intentTestClasses
+	classpath = sourceSets.intentTest.runtimeClasspath
+	mainClass = "com.lucasrocha.craftai.client.service.NavigationServiceTest"
+}
+
+tasks.register("craftingTest", JavaExec) {
+	group = "verification"
+	description = "Runs deterministic recipe and inventory analysis tests."
+	dependsOn intentTestClasses
+	classpath = sourceSets.intentTest.runtimeClasspath
+	mainClass = "com.lucasrocha.craftai.client.service.CraftingAnalysisServiceTest"
+}
+
+tasks.register("assistanceContextTest", JavaExec) {
+	group = "verification"
+	description = "Runs recommendation, planning, and bounded conversation-context tests."
+	dependsOn intentTestClasses
+	classpath = sourceSets.intentTest.runtimeClasspath
+	mainClass = "com.lucasrocha.craftai.client.service.AssistanceContextTest"
+}
+
+tasks.register("presentationTest", JavaExec) {
+	group = "verification"
+	description = "Runs deterministic chat presentation tests."
+	dependsOn intentTestClasses
+	classpath = sourceSets.intentTest.runtimeClasspath
+	mainClass = "com.lucasrocha.craftai.client.presentation.CraftAiChatPresenterTest"
+}
+
+tasks.named("check") {
+	dependsOn intentTest
+	dependsOn navigationTest
+	dependsOn craftingTest
+	dependsOn assistanceContextTest
+	dependsOn presentationTest
+}
+
+java {
+	withSourcesJar()
+
+	sourceCompatibility = JavaVersion.VERSION_25
+	targetCompatibility = JavaVersion.VERSION_25
+}
+
+jar {
+	def projectName = project.name
+	inputs.property "projectName", projectName
+
+	from("../LICENSE") {
+		rename { "${it}_$projectName"}
+	}
+}
+
+publishing {
+	publications {
+		create("mavenJava", MavenPublication) {
+			from components.java
+		}
+	}
+
+	repositories {
+		// No remote Maven publication is configured for this portfolio build.
+	}
+}

@@ -1,17 +1,27 @@
 {
   "name": "craft-ai-backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Local TypeScript API for the CraftAI Minecraft assistant.",
+  "private": true,
   "scripts": {
+    "build": "tsc",
     "dev": "tsx src/server.ts",
+    "start": "node dist/server.js",
     "test": "tsx --test src/test/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "minecraft",
+    "fabric",
+    "openai",
+    "typescript"
+  ],
+  "author": "Lucas Rocha",
+  "license": "CC0-1.0",
   "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "dotenv": "^17.4.2",
     "express": "^5.2.1",

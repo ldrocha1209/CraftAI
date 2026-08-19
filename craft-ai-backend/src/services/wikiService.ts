@@ -1,75 +1,198 @@
+import type { AskRequest } from "../types/ask.js";
+
 const WIKI_API_URL = "https://minecraft.wiki/api.php";
+const DEFAULT_TIMEOUT_MS = 5_000;
+const DEFAULT_CACHE_TTL_MS = 5 * 60_000;
+const MAX_CACHE_ENTRIES = 64;
+const MAX_EXTRACT_LENGTH = 8_000;
 
-export async function searchMinecraftWiki(
-    searchTerm: string
-): Promise<string | null> {
+type FetchFunction = (
+    input: string | URL | Request,
+    init?: RequestInit
+) => Promise<Response>;
 
-    const searchUrl = new URL(WIKI_API_URL);
+interface CacheEntry {
+    value: string | null;
+    expiresAt: number;
+}
 
-    searchUrl.searchParams.set("action", "query");
-    searchUrl.searchParams.set("list", "search");
-    searchUrl.searchParams.set("srsearch", searchTerm);
-    searchUrl.searchParams.set("srlimit", "1");
-    searchUrl.searchParams.set("format", "json");
+interface WikiServiceOptions {
+    fetch?: FetchFunction;
+    now?: () => number;
+    timeoutMs?: number;
+    cacheTtlMs?: number;
+    warn?: (message: string) => void;
+}
 
-    const searchResponse = await fetch(searchUrl);
+export class MinecraftWikiService {
+    private readonly fetch: FetchFunction;
+    private readonly now: () => number;
+    private readonly timeoutMs: number;
+    private readonly cacheTtlMs: number;
+    private readonly warn: (message: string) => void;
+    private readonly cache = new Map<string, CacheEntry>();
 
-    if (!searchResponse.ok) {
-        throw new Error(
-            `Minecraft Wiki search failed: ${searchResponse.status}`
+    constructor(options: WikiServiceOptions = {}) {
+        this.fetch = options.fetch ?? globalThis.fetch;
+        this.now = options.now ?? Date.now;
+        this.timeoutMs = options.timeoutMs ?? readPositiveDuration(
+            process.env.WIKI_TIMEOUT_MS,
+            DEFAULT_TIMEOUT_MS
         );
-    }
-
-    const searchData = await searchResponse.json();
-
-    const results = searchData.query?.search;
-
-    if (!results || results.length === 0) {
-        return null;
-    }
-
-    const pageTitle = results[0].title;
-
-    const pageUrl = new URL(WIKI_API_URL);
-
-    pageUrl.searchParams.set("action", "query");
-    pageUrl.searchParams.set("prop", "extracts");
-    pageUrl.searchParams.set("explaintext", "1");
-    pageUrl.searchParams.set("exsectionformat", "plain");
-    pageUrl.searchParams.set("titles", pageTitle);
-    pageUrl.searchParams.set("format", "json");
-
-    const pageResponse = await fetch(pageUrl);
-
-    if (!pageResponse.ok) {
-        throw new Error(
-            `Minecraft Wiki page request failed: ${pageResponse.status}`
+        this.cacheTtlMs = options.cacheTtlMs ?? readPositiveDuration(
+            process.env.WIKI_CACHE_TTL_MS,
+            DEFAULT_CACHE_TTL_MS
         );
+        this.warn = options.warn ?? (message => console.warn(message));
     }
 
-    const pageData = await pageResponse.json();
+    async contextFor(request: AskRequest): Promise<string | null> {
+        if (!shouldRetrieveWiki(request)) {
+            return null;
+        }
 
-    const pages = pageData.query?.pages;
-
-    if (!pages) {
-        return null;
+        const searchTerm = request.matchedItem?.name ?? request.question;
+        try {
+            return await this.search(searchTerm);
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : "unknown error";
+            this.warn(`Minecraft Wiki unavailable; continuing without it: ${reason}`);
+            return null;
+        }
     }
 
-    const page = Object.values(pages)[0] as {
-        extract?: string;
-    };
+    async search(searchTerm: string): Promise<string | null> {
+        const cacheKey = normalize(searchTerm);
+        const cached = this.cache.get(cacheKey);
+        if (cached && cached.expiresAt > this.now()) {
+            // Reinsertion makes this a small LRU cache without another dependency.
+            this.cache.delete(cacheKey);
+            this.cache.set(cacheKey, cached);
+            return cached.value;
+        }
+        if (cached) {
+            this.cache.delete(cacheKey);
+        }
 
-    const extract = page.extract ?? null;
-
-    if (!extract) {
-        return null;
+        const pageTitle = await this.searchPageTitle(searchTerm);
+        const extract = pageTitle ? await this.fetchPageExtract(pageTitle) : null;
+        const value = truncateExtract(extract);
+        this.store(cacheKey, value);
+        return value;
     }
 
-    const maxLength = 12000;
+    private async searchPageTitle(searchTerm: string): Promise<string | null> {
+        const response = await this.fetch(wikiUrl({
+            action: "query",
+            list: "search",
+            srsearch: searchTerm,
+            srlimit: "1",
+            format: "json"
+        }), {
+            signal: AbortSignal.timeout(this.timeoutMs)
+        });
+        if (!response.ok) {
+            throw new Error(`search returned HTTP ${response.status}`);
+        }
 
-    if (extract.length <= maxLength) {
+        const data = await response.json() as {
+            query?: { search?: Array<{ title?: unknown }> };
+        };
+        const title = data.query?.search?.[0]?.title;
+        return typeof title === "string" && title.length > 0 ? title : null;
+    }
+
+    private async fetchPageExtract(pageTitle: string): Promise<string | null> {
+        const response = await this.fetch(wikiUrl({
+            action: "query",
+            prop: "extracts",
+            explaintext: "1",
+            exsectionformat: "plain",
+            titles: pageTitle,
+            format: "json"
+        }), {
+            signal: AbortSignal.timeout(this.timeoutMs)
+        });
+        if (!response.ok) {
+            throw new Error(`page request returned HTTP ${response.status}`);
+        }
+
+        const data = await response.json() as {
+            query?: { pages?: Record<string, { extract?: unknown }> };
+        };
+        const firstPage = data.query?.pages
+            ? Object.values(data.query.pages)[0]
+            : undefined;
+        return typeof firstPage?.extract === "string" && firstPage.extract.length > 0
+            ? firstPage.extract
+            : null;
+    }
+
+    private store(key: string, value: string | null): void {
+        while (this.cache.size >= MAX_CACHE_ENTRIES) {
+            const oldestKey = this.cache.keys().next().value as string | undefined;
+            if (oldestKey === undefined) {
+                break;
+            }
+            this.cache.delete(oldestKey);
+        }
+        this.cache.set(key, {
+            value,
+            expiresAt: this.now() + this.cacheTtlMs
+        });
+    }
+}
+
+export function shouldRetrieveWiki(request: AskRequest): boolean {
+    // Minecraft already supplied authoritative facts for these request types;
+    // a general Wiki lookup would add latency without improving the answer.
+    if (request.assistanceMode !== "GENERAL"
+            || request.worldQuery
+            || request.conversation.followUp) {
+        return false;
+    }
+
+    const question = normalize(request.question);
+    const asksAboutCurrentState = [
+        /\bwhat am i (?:holding|wearing|carrying)\b/,
+        /\bwhat do i have\b/,
+        /\bwhat(?:'s| is) in my inventory\b/,
+        /\bwhat biome am i in\b/,
+        /\bwhat dimension am i in\b/,
+        /\bwhere am i\b/,
+        /\bwhat are my coordinates\b/
+    ].some(pattern => pattern.test(question));
+    if (asksAboutCurrentState) {
+        return false;
+    }
+
+    return !(request.recipe
+        && /\b(?:can i craft|enough materials|what am i missing)\b/.test(question));
+}
+
+function wikiUrl(parameters: Record<string, string>): URL {
+    const url = new URL(WIKI_API_URL);
+    Object.entries(parameters).forEach(([key, value]) => url.searchParams.set(key, value));
+    return url;
+}
+
+function truncateExtract(extract: string | null): string | null {
+    if (!extract || extract.length <= MAX_EXTRACT_LENGTH) {
         return extract;
     }
+    return extract.substring(0, MAX_EXTRACT_LENGTH) + "\n[Wiki content truncated]";
+}
 
-    return extract.substring(0, maxLength) + "\n[Wiki content truncated]";
-  }
+function normalize(value: string): string {
+    return value.toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+function readPositiveDuration(value: string | undefined, fallback: number): number {
+    if (value === undefined) {
+        return fallback;
+    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export const minecraftWikiService = new MinecraftWikiService();
