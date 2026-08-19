@@ -581,6 +581,8 @@ Acceptance criteria:
 
 Goal: search only when the player's language requests an actual location.
 
+**Status: complete**
+
 Required distinctions:
 
 - `What is a village?` → no world search.
@@ -590,11 +592,40 @@ Required distinctions:
 
 Tasks:
 
-- Introduce a small intent result containing action, target type, and target identifier.
-- Support a controlled vocabulary of location phrases such as `where`, `nearest`, `closest`, `find`, and `get to`.
-- Recognize a few useful aliases such as `villagers` → village when used in a location request.
-- Keep intent detection deterministic and testable initially.
-- Consider backend/AI classification only if deterministic detection proves insufficient, because classification adds latency and a second possible failure point.
+- [x] Introduce a small intent result containing action, target type, and target identifier.
+- [x] Support a controlled vocabulary of location phrases such as `where`, `nearest`, `closest`, `find`, and `get to`.
+- [x] Recognize useful aliases such as `villagers` → village when used in a location request.
+- [x] Keep intent detection deterministic and testable initially.
+- [x] Keep backend/AI classification deferred unless deterministic detection proves insufficient, because classification adds latency and a second possible failure point.
+
+Implementation notes:
+
+- `QueryIntent` represents `GENERAL_QUESTION`, `WORLD_SEARCH`, and `AMBIGUOUS` actions with an optional typed world-query target.
+- `QueryIntentDetector` normalizes input once and applies bounded, target-specific phrase patterns instead of treating a location noun alone as search permission.
+- Village aliases include village, villages, villager, and villagers; desert and deserts map to the desert target.
+- Explicit location patterns include nearest, closest, where is/are, direct find, get to, locate, and directions to.
+- Nearby, near me, around here, and in my world are deliberately clarified as ambiguous rather than launching a speculative search.
+- Multiple supported targets retain the immediate comparison limitation and never start a partial search.
+- Request logs include the detected action and selected target without logging the player's question.
+
+Automated validation completed:
+
+- The dependency-free Gradle `intentTest` table passes all 31 positive, negative, ambiguous, alias, normalization, and empty-input cases.
+- Fabric `./gradlew intentTest build` passes, and `intentTest` is included in the normal `check`/`build` lifecycle.
+- Backend `npm run typecheck` passes.
+- All 8 backend contract and prompt tests pass.
+
+Manual acceptance results:
+
+- Four noun-only and explanatory village/desert questions were classified as `GENERAL_QUESTION`, completed normally, and launched no world search.
+- Explicit village, desert, villager-alias, and alternative location phrases were classified as `WORLD_SEARCH` and launched exactly one intended search each.
+- Nearby and multi-target ambiguity produced immediate clarification without starting a request or world search.
+- The rapid-request test launched one desert search and rejected the overlapping command.
+- A deliberate backend failure released request state, and the following request completed successfully after restart.
+- A Nether location request returned the Overworld-only limitation without invoking `WorldQueryService`.
+- All 12 started requests had a matching completion or expected failure log.
+- Village searches completed in 0.00–0.16 seconds and desert searches in 0.84–1.00 seconds without increasing durations or a CraftAI search-related overload warning.
+- Two later manual vanilla `/locate biome desert` checks took 13.58 and 14.01 seconds; the first directly produced the session's 271-tick server-overload warning. This was not a CraftAI query, but the reported perception of cumulative lag should still motivate profiling and repeat-query caching before expanding biome searches.
 
 Acceptance criteria:
 
@@ -900,7 +931,7 @@ When development resumes, use this order:
 3. [x] Replace the misleading `villageResults` string with structured world-query data.
 4. [x] Refactor village/desert searches onto generic structure/biome helpers.
 5. [x] Complete the Phase 2 `CraftAiClient`, template-remnant, diagnostics cleanup, and manual acceptance.
-6. Improve location-intent detection and test positive/negative phrasing.
+6. [x] Complete Phase 3 location-intent detection and manual acceptance.
 7. Add navigation calculations.
 8. Correct recipe extraction before promising inventory-aware crafting answers.
 9. Add new world-query targets one at a time.

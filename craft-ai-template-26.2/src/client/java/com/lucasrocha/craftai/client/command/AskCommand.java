@@ -7,6 +7,8 @@ import com.lucasrocha.craftai.client.data.MinecraftItemData;
 import com.lucasrocha.craftai.client.data.MinecraftRecipeData;
 import com.lucasrocha.craftai.client.data.PlayerContext;
 import com.lucasrocha.craftai.client.data.WorldQueryResult;
+import com.lucasrocha.craftai.client.intent.QueryIntent;
+import com.lucasrocha.craftai.client.intent.QueryIntentDetector;
 import com.lucasrocha.craftai.client.service.CraftAiApi;
 import com.lucasrocha.craftai.client.service.WorldQueryService;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -47,15 +49,10 @@ public final class AskCommand {
     }
 
     private static int execute(FabricClientCommandSource source, String question) {
-        String normalizedQuestion = question.toLowerCase(Locale.ROOT);
-        int villageIndex = normalizedQuestion.indexOf("village");
-        int desertIndex = normalizedQuestion.indexOf("desert");
+        QueryIntent intent = QueryIntentDetector.detect(question);
 
-        if (villageIndex >= 0 && desertIndex >= 0) {
-            source.sendFeedback(Component.literal(
-                    "CraftAI: I can't compare multiple world locations yet. "
-                            + "Please ask for the nearest village or desert separately."
-            ));
+        if (intent.action() == QueryIntent.Action.AMBIGUOUS) {
+            sendAmbiguousIntentFeedback(source, intent.targetIdentifier());
             return 1;
         }
 
@@ -64,8 +61,14 @@ public final class AskCommand {
             return 1;
         }
 
-        WorldQueryResult.Target target = selectWorldQueryTarget(villageIndex, desertIndex);
-        LOGGER.info("CraftAI request started (worldQueryTarget={})", target == null ? "none" : target.name());
+        WorldQueryResult.Target target = intent.action() == QueryIntent.Action.WORLD_SEARCH
+                ? intent.targetIdentifier()
+                : null;
+        LOGGER.info(
+                "CraftAI request started (intent={}, worldQueryTarget={})",
+                intent.action(),
+                target == null ? "none" : target.name()
+        );
         source.sendFeedback(Component.literal("CraftAI: Thinking..."));
 
         try {
@@ -153,16 +156,18 @@ public final class AskCommand {
         );
     }
 
-    private static WorldQueryResult.Target selectWorldQueryTarget(int villageIndex, int desertIndex) {
-        if (villageIndex < 0) {
-            return desertIndex < 0 ? null : WorldQueryResult.Target.DESERT;
-        }
-
-        if (desertIndex < 0 || villageIndex < desertIndex) {
-            return WorldQueryResult.Target.VILLAGE;
-        }
-
-        return WorldQueryResult.Target.DESERT;
+    private static void sendAmbiguousIntentFeedback(
+            FabricClientCommandSource source,
+            WorldQueryResult.Target target
+    ) {
+        String message = target == null
+                ? "CraftAI: I can't compare multiple world locations yet. "
+                        + "Please ask for the nearest village or desert separately."
+                : "CraftAI: I'm not sure whether you want me to search your world. "
+                        + "Try asking 'Where is the nearest "
+                        + target.name().toLowerCase(Locale.ROOT)
+                        + "?'";
+        source.sendFeedback(Component.literal(message));
     }
 
     private static Throwable unwrap(Throwable error) {
