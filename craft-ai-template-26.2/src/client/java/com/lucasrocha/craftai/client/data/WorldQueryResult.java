@@ -9,6 +9,7 @@ public class WorldQueryResult {
 
     public enum Target {
         VILLAGE(Kind.STRUCTURE),
+        STRONGHOLD(Kind.STRUCTURE),
         DESERT(Kind.BIOME);
 
         private final Kind kind;

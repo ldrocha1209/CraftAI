@@ -83,6 +83,49 @@ test("accepts a structured not-found world search without coordinates", () => {
     assert.equal(request.worldQuery?.distanceBlocks, undefined);
 });
 
+test("accepts a found stronghold search as structured world context", () => {
+    const request = parseAskRequest({
+        ...(fixture as object),
+        question: "Where is the nearest stronghold?",
+        worldQuery: {
+            kind: "STRUCTURE",
+            target: "STRONGHOLD",
+            status: "FOUND",
+            dimension: "minecraft:overworld",
+            position: { x: -1248, z: 2112 },
+            distanceBlocks: 2481
+        }
+    });
+
+    assert.equal(request.worldQuery?.target, "STRONGHOLD");
+    assert.equal(request.worldQuery?.kind, "STRUCTURE");
+
+    const prompt = buildCraftAiPrompt(request, null);
+    assert.match(prompt, /"target": "STRONGHOLD"/);
+    assert.match(prompt, /"x": -1248/);
+});
+
+test("rejects a world-query target with the wrong query kind", () => {
+    assert.throws(
+        () => parseAskRequest({
+            ...(fixture as object),
+            worldQuery: {
+                kind: "BIOME",
+                target: "STRONGHOLD",
+                status: "NOT_FOUND",
+                dimension: "minecraft:overworld"
+            }
+        }),
+        (error: unknown) => {
+            assert.ok(error instanceof RequestValidationError);
+            assert.ok(error.issues.includes(
+                "worldQuery.kind must be STRUCTURE for target STRONGHOLD."
+            ));
+            return true;
+        }
+    );
+});
+
 test("rejects a blank question and malformed player context", () => {
     assert.throws(
         () => parseAskRequest({ question: " ", player: {} }),
