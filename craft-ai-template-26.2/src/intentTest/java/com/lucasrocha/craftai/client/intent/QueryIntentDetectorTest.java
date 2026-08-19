@@ -152,7 +152,17 @@ public final class QueryIntentDetectorTest {
                 "found result reusable",
                 true,
                 WorldQueryResult.found(
-                        VILLAGE.kind(), VILLAGE, "minecraft:overworld", 10, 20, 22
+                        VILLAGE.kind(),
+                        VILLAGE,
+                        "minecraft:overworld",
+                        10,
+                        20,
+                        new WorldQueryResult.Navigation(
+                                22,
+                                10,
+                                20,
+                                WorldQueryResult.Direction.SOUTHEAST
+                        )
                 ).isReusable()
         );
         assertEquals(

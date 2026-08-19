@@ -63,9 +63,12 @@ export function buildCraftAiPrompt(
         WORLD SEARCH RULES
 
         - World search results are calculated directly from the player's current Minecraft world.
-        - Treat a FOUND result's target, dimension, coordinates, and distance as authoritative.
+        - Treat a FOUND result's target, dimension, coordinates, and navigation object as authoritative.
         - Use the provided coordinates when answering a location question.
-        - Never invent, modify, or estimate different coordinates when a FOUND result is available.
+        - The navigation distance, X/Z offsets, and compass direction were calculated deterministically from the player's supplied position and the Minecraft destination.
+        - Positive deltaXBlocks means east; negative means west. Positive deltaZBlocks means south; negative means north.
+        - Explain the supplied navigation facts naturally, but do not recalculate, alter, contradict, or replace them.
+        - Never invent, modify, or estimate different coordinates, distances, offsets, or directions when a FOUND result is available.
         - A NOT_FOUND result means Minecraft did not find the requested target within the configured search bounds.
         - An UNSUPPORTED result means the search could not safely be performed; explain the supplied reason without pretending a location was found.
         - If no world search was performed, do not claim that a location was found.

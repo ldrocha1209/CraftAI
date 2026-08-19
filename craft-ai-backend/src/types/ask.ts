@@ -40,10 +40,27 @@ export interface MinecraftRecipe {
 
 export type WorldQueryKind = "STRUCTURE" | "BIOME";
 export type WorldQueryStatus = "FOUND" | "NOT_FOUND" | "UNSUPPORTED";
+export type NavigationDirection =
+    | "NORTH"
+    | "NORTHEAST"
+    | "EAST"
+    | "SOUTHEAST"
+    | "SOUTH"
+    | "SOUTHWEST"
+    | "WEST"
+    | "NORTHWEST"
+    | "HERE";
 
 export interface WorldQueryPosition {
     x: number;
     z: number;
+}
+
+export interface WorldQueryNavigation {
+    distanceBlocks: number;
+    deltaXBlocks: number;
+    deltaZBlocks: number;
+    direction: NavigationDirection;
 }
 
 export interface WorldQueryResult {
@@ -52,7 +69,7 @@ export interface WorldQueryResult {
     status: WorldQueryStatus;
     dimension: string;
     position?: WorldQueryPosition;
-    distanceBlocks?: number;
+    navigation?: WorldQueryNavigation;
     reason?: string;
 }
 

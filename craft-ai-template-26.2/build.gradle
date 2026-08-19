@@ -59,8 +59,17 @@ tasks.register("intentTest", JavaExec) {
 	mainClass = "com.lucasrocha.craftai.client.intent.QueryIntentDetectorTest"
 }
 
+tasks.register("navigationTest", JavaExec) {
+	group = "verification"
+	description = "Runs deterministic navigation calculation tests."
+	dependsOn intentTestClasses
+	classpath = sourceSets.intentTest.runtimeClasspath
+	mainClass = "com.lucasrocha.craftai.client.service.NavigationServiceTest"
+}
+
 tasks.named("check") {
 	dependsOn intentTest
+	dependsOn navigationTest
 }
 
 java {

@@ -43,6 +43,11 @@
       "x": 944,
       "z": -288
     },
-    "distanceBlocks": 878
+    "navigation": {
+      "distanceBlocks": 880,
+      "deltaXBlocks": 844,
+      "deltaZBlocks": -248,
+      "direction": "EAST"
+    }
   }
 }
