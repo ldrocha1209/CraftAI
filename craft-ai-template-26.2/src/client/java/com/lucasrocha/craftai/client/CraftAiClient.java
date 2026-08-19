@@ -10,19 +10,16 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.client.Minecraft;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import java.util.concurrent.atomic.AtomicBoolean;
-import com.lucasrocha.craftai.client.data.CraftAiContext;
+import com.lucasrocha.craftai.client.data.CraftAiRequest;
 import com.lucasrocha.craftai.client.data.MinecraftItemData;
 import com.lucasrocha.craftai.client.data.MinecraftRecipeData;
+import com.lucasrocha.craftai.client.data.PlayerContext;
+import com.lucasrocha.craftai.client.data.WorldQueryResult;
 import net.minecraft.world.entity.EquipmentSlot;
 import com.lucasrocha.craftai.client.service.WorldQueryService;
 import java.util.concurrent.CompletableFuture;
-import net.minecraft.world.level.biome.Biomes;
-import net.minecraft.core.Holder;
-import net.minecraft.world.level.biome.Biome;
-import java.util.function.Predicate;
-import net.minecraft.core.BlockPos;
-import net.minecraft.tags.StructureTags;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 
 public class CraftAiClient implements ClientModInitializer {
@@ -54,16 +51,27 @@ public class CraftAiClient implements ClientModInitializer {
 																"question"
 														);
 
-												String villageResults = null;
+											String normalizedQuestion = question.toLowerCase(Locale.ROOT);
 
-												boolean askingAboutVillage =
-														question.toLowerCase().contains("village");
+											int villageIndex = normalizedQuestion.indexOf("village");
+											int desertIndex = normalizedQuestion.indexOf("desert");
 
-												boolean askingAboutDesert =
-														question.toLowerCase().contains("desert");
+											WorldQueryResult.Target worldQueryTarget =
+													selectWorldQueryTarget(villageIndex, desertIndex);
 
-												CompletableFuture<String> worldSearchFuture =
-														CompletableFuture.completedFuture(null);
+											if (villageIndex >= 0 && desertIndex >= 0) {
+												context.getSource().sendFeedback(
+														Component.literal(
+																"CraftAI: I can't compare multiple world locations yet. " +
+																		"Please ask for the nearest village or desert separately."
+														)
+												);
+
+												return 1;
+											}
+
+											CompletableFuture<WorldQueryResult> worldSearchFuture =
+													CompletableFuture.completedFuture(null);
 
 												MinecraftItemData minecraftItem =
 														MinecraftDataService.findItemInQuestion(
@@ -98,63 +106,58 @@ public class CraftAiClient implements ClientModInitializer {
 												var player =
 														Minecraft.getInstance().player;
 
-												var minecraft = Minecraft.getInstance();
-												var server = minecraft.getSingleplayerServer();
+											var minecraft = Minecraft.getInstance();
+											var server = minecraft.getSingleplayerServer();
 
-												if (askingAboutVillage && player != null) {
+											String dimension = "UNKNOWN";
 
-													if (server != null) {
+											if (minecraft.level != null) {
+												dimension = minecraft.level
+														.dimension()
+														.identifier()
+														.toString();
 
-														worldSearchFuture =
-																WorldQueryService.findNearestVillageAsync(
-																				server,
-																				player.blockPosition()
-																		)
-																		.thenApply(village -> {
+												System.out.println(
+														"CraftAI dimension: " + dimension
+												);
+											}
 
-																			if (village == null) {
-																				return "No nearby village was found.";
-																			}
+											if (worldQueryTarget != null) {
+												WorldQueryResult.Kind queryKind =
+														worldQueryTarget == WorldQueryResult.Target.VILLAGE
+																? WorldQueryResult.Kind.STRUCTURE
+																: WorldQueryResult.Kind.BIOME;
 
-																			return "Nearest village: X: " +
-																					village.x() +
-																					", Z: " +
-																					village.z() +
-																					" (approximately " +
-																					village.distance() +
-																					" blocks away)";
-																		});
-													}
+												if (player == null || server == null) {
+													worldSearchFuture = CompletableFuture.completedFuture(
+															WorldQueryResult.unsupported(
+																	queryKind,
+																	worldQueryTarget,
+																	dimension,
+																	"World search requires a single-player world."
+															)
+													);
+												} else if (!"minecraft:overworld".equals(dimension)) {
+													worldSearchFuture = CompletableFuture.completedFuture(
+															WorldQueryResult.unsupported(
+																	queryKind,
+																	worldQueryTarget,
+																	dimension,
+																	"World searches currently support the Overworld only."
+															)
+													);
+												} else if (worldQueryTarget == WorldQueryResult.Target.VILLAGE) {
+													worldSearchFuture = WorldQueryService.findNearestVillageAsync(
+															server,
+															player.blockPosition()
+													);
+												} else {
+													worldSearchFuture = WorldQueryService.findNearestDesertAsync(
+															server,
+															player.blockPosition()
+													);
 												}
-
-												if (askingAboutDesert && player != null) {
-
-													minecraft = Minecraft.getInstance();
-													server = minecraft.getSingleplayerServer();
-
-													if (server != null) {
-
-														worldSearchFuture =
-																WorldQueryService.findNearestDesertAsync(
-																				server,
-																				player.blockPosition()
-																		)
-																		.thenApply(desert -> {
-
-																			if (desert == null) {
-																				return "No nearby desert was found.";
-																			}
-
-																			return "Nearest desert: X: " +
-																					desert.x() +
-																					", Z: " +
-																					desert.z() +
-																					" (approximately " +
-																					desert.distance() +
-																					" blocks away)";
-																		});
-													}
-												}
+											}
 
 												Map<String, Integer> inventoryCounts = new HashMap<>();
 
@@ -213,30 +216,16 @@ public class CraftAiClient implements ClientModInitializer {
 													);
 												}
 
-												String dimension = "UNKNOWN";
+													PlayerContext.Position playerPosition = null;
 
-												if (Minecraft.getInstance().level != null) {
+													if (player != null) {
 
-													dimension = Minecraft.getInstance()
-															.level
-															.dimension()
-															.identifier()
-															.toString();
-
-													System.out.println(
-															"CraftAI dimension: " + dimension
-													);
-												}
-
-
-												String playerPosition = "UNKNOWN";
-
-												if (player != null) {
-
-													playerPosition =
-															"X: " + Math.round(player.getX()) +
-																	", Y: " + Math.round(player.getY()) +
-																	", Z: " + Math.round(player.getZ());
+														playerPosition =
+																new PlayerContext.Position(
+																		Math.round(player.getX()),
+																		Math.round(player.getY()),
+																		Math.round(player.getZ())
+																);
 
 													System.out.println(
 															"CraftAI player position: " + playerPosition
@@ -312,24 +301,26 @@ public class CraftAiClient implements ClientModInitializer {
 															.orElse("UNKNOWN");
 												}
 
-												CraftAiContext aiContext =
-														new CraftAiContext(
-																question,
-																minecraftItem,
-																minecraftRecipe,
-																gameMode,
-																biome,
-																timeOfDay,
-																inventoryCounts,
-																dimension,
-																playerPosition,
-																mainHandItem,
-																offHandItem,
-																helmet,
-																chestplate,
-																leggings,
-																boots
-														);
+													PlayerContext playerContext =
+															new PlayerContext(
+																	gameMode,
+																	biome,
+																	timeOfDay,
+																	dimension,
+																	playerPosition,
+																	inventoryCounts,
+																	new PlayerContext.Equipment(
+																			mainHandItem,
+																			offHandItem,
+																			helmet,
+																			chestplate,
+																			leggings,
+																			boots
+																	)
+															);
+
+													MinecraftItemData selectedItem = minecraftItem;
+													MinecraftRecipeData selectedRecipe = minecraftRecipe;
 
 												System.out.println(
 														"CraftAI found: " +
@@ -356,13 +347,18 @@ public class CraftAiClient implements ClientModInitializer {
 														)
 												);
 
-												worldSearchFuture
-														.thenCompose(worldSearchResult -> {
+													worldSearchFuture
+															.thenCompose(worldSearchResult -> {
 
-															return api.askQuestion(
-																	aiContext,
-																	worldSearchResult
-															);
+																CraftAiRequest requestBody = new CraftAiRequest(
+																		question,
+																		playerContext,
+																		selectedItem,
+																		selectedRecipe,
+																		worldSearchResult
+																);
+
+																return api.askQuestion(requestBody);
 
 														})
 														.thenAccept(response -> {
@@ -452,6 +448,23 @@ public class CraftAiClient implements ClientModInitializer {
 				lastBiome = currentBiome;
 			}
 		});
+		}
+
+	private static WorldQueryResult.Target selectWorldQueryTarget(
+			int villageIndex,
+			int desertIndex
+	) {
+		if (villageIndex < 0) {
+			return desertIndex < 0
+					? null
+					: WorldQueryResult.Target.DESERT;
+		}
+
+		if (desertIndex < 0 || villageIndex < desertIndex) {
+			return WorldQueryResult.Target.VILLAGE;
+		}
+
+		return WorldQueryResult.Target.DESERT;
 	}
 
 	private static String capitalizeWords(String text) {

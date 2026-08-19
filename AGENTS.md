@@ -23,12 +23,12 @@ CraftAI must not become a generic chatbot embedded in Minecraft or a broad auton
 
 ## Workspace Boundaries
 
-The workspace currently contains two independent Git repositories:
+The workspace is one Git repository containing two independently built applications:
 
 - `craft-ai-template-26.2/`: Java 25/Fabric mod for Minecraft 26.2.
 - `craft-ai-backend/`: TypeScript/Express backend using the Minecraft Wiki and OpenAI Responses API.
 
-The projects communicate through HTTP/JSON. Preserve their application boundaries even if they are later moved into one monorepo.
+The projects communicate through HTTP/JSON. Preserve their application and build-system boundaries inside the monorepo.
 
 Do not modify generated or local-state directories unless a task explicitly requires it:
 
@@ -44,20 +44,17 @@ Never inspect, print, copy, or commit secret values from `.env`. It is acceptabl
 
 ## Current Development Priority
 
-The current next milestone is **Roadmap Phase 0 — Stabilize the Existing Boundary**.
+**Roadmap Phase 0 — Stabilize the Existing Boundary** is complete. The current next milestone is **Phase 1 — Refactor the World Query Foundation**.
 
 Unless the user explicitly selects another task, prioritize work in this order:
 
-1. Preserve and document current regression behavior.
-2. Stabilize the Java-to-TypeScript request contract.
-3. Replace `villageResults` with structured generic world-query data.
-4. Refactor village/desert searches onto generic structure/biome helpers.
-5. Improve and test world-query intent detection.
-6. Clean and separate `CraftAiClient` responsibilities.
-7. Add deterministic navigation calculations.
-8. Correct recipe extraction and inventory comparison.
-9. Add world-query targets incrementally.
-10. Add contextual planning and limited conversation context only after underlying facts are reliable.
+1. Refactor village/desert searches onto generic structure/biome helpers.
+2. Improve and test world-query intent detection.
+3. Clean and separate `CraftAiClient` responsibilities.
+4. Add deterministic navigation calculations.
+5. Correct recipe extraction and inventory comparison.
+6. Add world-query targets incrementally.
+7. Add contextual planning and limited conversation context only after underlying facts are reliable.
 
 Do not skip foundational phases merely to add visible features unless the user knowingly chooses that tradeoff.
 
@@ -141,7 +138,7 @@ Any change to the request or response must inspect and update all affected bound
 
 Prefer structured objects over formatted strings and long positional parameter lists. Required, optional, unavailable, and unknown values must have intentional representations.
 
-Do not silently rename, drop, reinterpret, or overwrite context fields. In particular, do not add new target types to the legacy `villageResults` string.
+Do not silently rename, drop, reinterpret, or overwrite context fields. Do not reintroduce the removed `villageResults` string; extend the structured `worldQuery` contract intentionally.
 
 ### Keep world-query results structured
 
@@ -259,7 +256,8 @@ Choose validation according to the files changed.
 At minimum:
 
 ```text
-npm exec tsc -- --noEmit
+npm run typecheck
+npm test
 ```
 
 Also run relevant unit or integration tests once they exist. Do not make live Wiki or OpenAI calls in routine automated tests; mock external boundaries.

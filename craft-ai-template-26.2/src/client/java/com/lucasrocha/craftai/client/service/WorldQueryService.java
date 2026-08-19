@@ -1,5 +1,6 @@
 package com.lucasrocha.craftai.client.service;
 
+import com.lucasrocha.craftai.client.data.WorldQueryResult;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.server.MinecraftServer;
@@ -13,23 +14,26 @@ import java.util.function.Predicate;
 
 public class WorldQueryService {
 
-    public record WorldLocation(
-            String type,
-            int x,
-            int z,
-            int distance
-    ) {}
+    private static final int DESERT_SEARCH_RADIUS_BLOCKS = 6400;
+    private static final int DESERT_HORIZONTAL_INTERVAL_BLOCKS = 128;
+    private static final int DESERT_VERTICAL_INTERVAL_BLOCKS = 64;
 
-    public static WorldLocation findNearestVillage(
+    public static WorldQueryResult findNearestVillage(
             MinecraftServer server,
             BlockPos playerPosition
     ) {
 
         if (server == null || playerPosition == null) {
-            return null;
+            return WorldQueryResult.unsupported(
+                    WorldQueryResult.Kind.STRUCTURE,
+                    WorldQueryResult.Target.VILLAGE,
+                    "UNKNOWN",
+                    "A single-player IntegratedServer and player position are required."
+            );
         }
 
         ServerLevel serverLevel = server.overworld();
+        String dimension = serverLevel.dimension().identifier().toString();
 
         BlockPos villagePos = serverLevel.findNearestMapStructure(
                 StructureTags.VILLAGE,
@@ -39,31 +43,37 @@ public class WorldQueryService {
         );
 
         if (villagePos == null) {
-            return null;
+            return WorldQueryResult.notFound(
+                    WorldQueryResult.Kind.STRUCTURE,
+                    WorldQueryResult.Target.VILLAGE,
+                    dimension
+            );
         }
 
         int distance = (int) Math.round(
                 Math.sqrt(playerPosition.distSqr(villagePos))
         );
 
-        return new WorldLocation(
-                "Village",
+        return WorldQueryResult.found(
+                WorldQueryResult.Kind.STRUCTURE,
+                WorldQueryResult.Target.VILLAGE,
+                dimension,
                 villagePos.getX(),
                 villagePos.getZ(),
                 distance
         );
     }
 
-    public static CompletableFuture<WorldLocation> findNearestVillageAsync(
+    public static CompletableFuture<WorldQueryResult> findNearestVillageAsync(
             MinecraftServer server,
             BlockPos playerPosition
     ) {
 
-        CompletableFuture<WorldLocation> future =
+        CompletableFuture<WorldQueryResult> future =
                 new CompletableFuture<>();
 
         if (server == null || playerPosition == null) {
-            future.complete(null);
+            future.complete(findNearestVillage(server, playerPosition));
             return future;
         }
 
@@ -75,7 +85,7 @@ public class WorldQueryService {
                         "CraftAI: Running village search on server thread"
                 );
 
-                WorldLocation village =
+                WorldQueryResult village =
                         findNearestVillage(
                                 server,
                                 playerPosition
@@ -92,16 +102,22 @@ public class WorldQueryService {
         return future;
     }
 
-    public static WorldLocation findNearestDesert(
+    public static WorldQueryResult findNearestDesert(
             MinecraftServer server,
             BlockPos playerPosition
     ) {
 
         if (server == null || playerPosition == null) {
-            return null;
+            return WorldQueryResult.unsupported(
+                    WorldQueryResult.Kind.BIOME,
+                    WorldQueryResult.Target.DESERT,
+                    "UNKNOWN",
+                    "A single-player IntegratedServer and player position are required."
+            );
         }
 
         ServerLevel serverLevel = server.overworld();
+        String dimension = serverLevel.dimension().identifier().toString();
 
         Predicate<Holder<Biome>> desertPredicate =
                 biomeHolder -> biomeHolder.is(Biomes.DESERT);
@@ -109,13 +125,17 @@ public class WorldQueryService {
         var desertResult = serverLevel.findClosestBiome3d(
                 desertPredicate,
                 playerPosition,
-                6400,
-                32,
-                32
+                DESERT_SEARCH_RADIUS_BLOCKS,
+                DESERT_HORIZONTAL_INTERVAL_BLOCKS,
+                DESERT_VERTICAL_INTERVAL_BLOCKS
         );
 
         if (desertResult == null) {
-            return null;
+            return WorldQueryResult.notFound(
+                    WorldQueryResult.Kind.BIOME,
+                    WorldQueryResult.Target.DESERT,
+                    dimension
+            );
         }
 
         BlockPos desertPos = desertResult.getFirst();
@@ -124,24 +144,26 @@ public class WorldQueryService {
                 Math.sqrt(playerPosition.distSqr(desertPos))
         );
 
-        return new WorldLocation(
-                "Desert",
+        return WorldQueryResult.found(
+                WorldQueryResult.Kind.BIOME,
+                WorldQueryResult.Target.DESERT,
+                dimension,
                 desertPos.getX(),
                 desertPos.getZ(),
                 distance
         );
     }
 
-    public static CompletableFuture<WorldLocation> findNearestDesertAsync(
+    public static CompletableFuture<WorldQueryResult> findNearestDesertAsync(
             MinecraftServer server,
             BlockPos playerPosition
     ) {
 
-        CompletableFuture<WorldLocation> future =
+        CompletableFuture<WorldQueryResult> future =
                 new CompletableFuture<>();
 
         if (server == null || playerPosition == null) {
-            future.complete(null);
+            future.complete(findNearestDesert(server, playerPosition));
             return future;
         }
 
@@ -149,15 +171,25 @@ public class WorldQueryService {
 
             try {
 
+                long startedAt = System.nanoTime();
+
                 System.out.println(
                         "CraftAI: Running desert search on server thread"
                 );
 
-                WorldLocation desert =
+                WorldQueryResult desert =
                         findNearestDesert(
                                 server,
                                 playerPosition
                         );
+
+                double durationSeconds =
+                        (System.nanoTime() - startedAt) / 1_000_000_000.0;
+
+                System.out.printf(
+                        "CraftAI: Desert search completed in %.2f seconds%n",
+                        durationSeconds
+                );
 
                 future.complete(desert);
 

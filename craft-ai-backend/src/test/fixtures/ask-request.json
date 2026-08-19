@@ -1,0 +1,48 @@
+{
+  "question": "Where is the nearest village, and can I craft oak planks?",
+  "player": {
+    "gameMode": "SURVIVAL",
+    "biome": "minecraft:plains",
+    "timeOfDay": "DAY",
+    "dimension": "minecraft:overworld",
+    "position": {
+      "x": 100,
+      "y": 64,
+      "z": -40
+    },
+    "inventory": {
+      "minecraft:oak_log": 12,
+      "minecraft:iron_pickaxe": 1
+    },
+    "equipment": {
+      "mainHand": "minecraft:iron_pickaxe",
+      "offHand": "EMPTY",
+      "helmet": "EMPTY",
+      "chestplate": "EMPTY",
+      "leggings": "EMPTY",
+      "boots": "EMPTY"
+    }
+  },
+  "matchedItem": {
+    "id": "minecraft:oak_planks",
+    "name": "Oak Planks",
+    "maxStackSize": 64
+  },
+  "recipe": {
+    "recipeId": "minecraft:oak_planks",
+    "ingredients": {
+      "minecraft:oak_log": 1
+    }
+  },
+  "worldQuery": {
+    "kind": "STRUCTURE",
+    "target": "VILLAGE",
+    "status": "FOUND",
+    "dimension": "minecraft:overworld",
+    "position": {
+      "x": 944,
+      "z": -288
+    },
+    "distanceBlocks": 878
+  }
+}

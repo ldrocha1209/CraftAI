@@ -68,11 +68,13 @@ cd craft-ai-backend
 npm install
 ```
 
-Create `craft-ai-backend/.env`:
+Copy `craft-ai-backend/.env.example` to `craft-ai-backend/.env`, then provide the API key:
 
 ```text
 OPENAI_API_KEY=your_api_key_here
 ```
+
+The example also documents optional `OPENAI_MODEL`, `HOST`, and `PORT` settings. The backend binds to `127.0.0.1:3000` by default.
 
 Start the development server:
 
@@ -101,13 +103,20 @@ In the local Minecraft instance, enter a single-player world and use:
 /ask How do I make a crafting table?
 ```
 
+The mod calls `http://localhost:3000` by default. Override it with the `CRAFTAI_BACKEND_URL` environment variable or the `craftai.backendUrl` Java system property. For example, an IntelliJ run configuration can use:
+
+```text
+-Dcraftai.backendUrl=http://localhost:3000
+```
+
 ## Validation
 
 Backend type-check:
 
 ```bash
 cd craft-ai-backend
-npm exec tsc -- --noEmit
+npm run typecheck
+npm test
 ```
 
 Fabric build:
@@ -128,4 +137,3 @@ Once the core roadmap is complete, development should shift toward reliability, 
 ## Security and Privacy
 
 The backend API key belongs only in `craft-ai-backend/.env` and must never be committed. Questions and selected Minecraft context are sent to the local backend and included in requests to the configured AI provider. Privacy disclosure and configuration improvements are tracked in the roadmap.
-

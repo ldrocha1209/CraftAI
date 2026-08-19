@@ -81,7 +81,7 @@ CraftAI does not need to become a broad Minecraft AI platform. Once the core roa
 
 ## 3. Workspace Layout
 
-The workspace contains two independent Git repositories.
+The workspace is a monorepo containing two independently built applications. Both original repository histories were retained when they were combined.
 
 ### `craft-ai-template-26.2/`
 
@@ -144,7 +144,7 @@ Express backend
 There is currently:
 
 - No WebSocket or streaming response.
-- No shared Java/TypeScript schema.
+- Matching Java and TypeScript request models that are manually maintained and protected by a representative contract fixture; there is no generated shared schema.
 - No conversation identifier or persistent session state.
 - No Fabric-specific network protocol between the projects.
 - No backend authentication.
@@ -179,15 +179,15 @@ There is currently:
    - X/Y/Z position.
    - Main-hand and off-hand items.
    - Helmet, chestplate, leggings, and boots.
-8. The collected values are placed in `CraftAiContext`.
+8. The collected values are placed in a nested `PlayerContext` containing numeric position and structured equipment data.
 9. An `AtomicBoolean` allows only one backend request at a time.
-10. After any world search completes, `CraftAiApi` manually serializes the context to JSON and sends `POST http://localhost:3000/ask` with a 60-second client timeout.
-11. The Express route reads the question and always calls `searchMinecraftWiki(question)`.
+10. After any world search completes, `CraftAiApi` serializes one typed `CraftAiRequest` through Gson and sends it to the configured backend `/ask` endpoint with a 60-second client timeout.
+11. The Express route validates and reconstructs the request through `parseAskRequest()`. Invalid payloads receive a structured HTTP 400 response before any external request is made.
 12. `wikiService` performs up to two sequential requests:
     - Search for the most relevant page.
     - Retrieve its plain-text extract, truncated to 12,000 characters.
-13. The route passes all request values and Wiki text to `generateAnswer()` as positional arguments.
-14. `aiService` interpolates the question, live context, world-search text, item/recipe data, Wiki extract, and behavior rules into one prompt.
+13. The route passes the typed request object and Wiki text to `generateAnswer()`.
+14. A pure prompt builder interpolates the question, nested player context, structured world-search result, item/recipe data, Wiki extract, and behavior rules into one prompt.
 15. The backend calls the OpenAI Responses API and returns `response.output_text` as `{ "answer": "..." }`.
 16. Java parses the answer, schedules chat output on Minecraft's client thread, and releases the in-progress flag.
 17. Any asynchronous failure produces a generic in-game failure message and prints the Java exception.
@@ -239,8 +239,8 @@ There is no partial response: the player waits for the world query, Wiki calls, 
 - [x] OpenAI Responses API integration.
 - [x] Prompt rules distinguishing live Minecraft facts from general knowledge.
 - [x] JSON answer returned to Minecraft chat.
-- [ ] Runtime request validation.
-- [ ] Structured error responses.
+- [x] Runtime request validation.
+- [x] Structured 400/500 error responses.
 - [ ] Selective Wiki retrieval.
 - [ ] Limited conversation context.
 - [ ] Automated backend tests.
@@ -251,23 +251,13 @@ There is no partial response: the player waits for the world query, Wiki calls, 
 
 These are observations about the current code, not reasons for a large redesign.
 
-### Request-contract duplication
+### Cross-language contract maintenance
 
-The same fields are repeated across:
+Java and TypeScript still define their request models separately. The nested request shape, runtime validator, and representative Java-compatible JSON fixture substantially reduce drift, but any contract change must still update and test both languages together.
 
-- `CraftAiContext` fields, constructor, and getters.
-- `CraftAiApi` JSON serialization.
-- `ask.ts` request-body extraction.
-- `generateAnswer()` positional parameters.
-- Prompt interpolation.
+### World-result target selection
 
-This makes a simple field addition or rename easy to implement inconsistently.
-
-### World-result naming mismatch
-
-Both village and desert results are transported in a property named `villageResults`. The backend always presents that property under `Village search`, even if it contains a desert result.
-
-If a question contains both `village` and `desert`, the desert future replaces the village future. Only one result reaches the backend, and which one wins is an implementation side effect rather than an explicit decision.
+Village and desert results now use a structured `worldQuery` object with explicit kind, target, status, dimension, position, distance, and reason fields. If both supported targets appear, the client clearly explains that comparisons are not supported yet and performs no partial search. This avoids presenting one result as if it were enough to answer a comparison.
 
 ### World-query assumptions
 
@@ -306,7 +296,7 @@ These limitations prevent trustworthy inventory-aware crafting answers today.
 
 ### Backend exposure and configuration
 
-- Backend URL, backend port, and OpenAI model are hardcoded.
+- Backend URL, backend host/port, and OpenAI model have simple environment or system-property configuration with local defaults.
 - The Express listener is not explicitly bound to loopback.
 - There is no authentication or rate limiting.
 - If the backend is reachable by another machine, its OpenAI key could be consumed indirectly.
@@ -359,7 +349,8 @@ client/
 ├── context/
 │   └── MinecraftContextCollector.java Player-state snapshot construction
 ├── data/
-│   ├── CraftAiContext.java
+│   ├── CraftAiRequest.java
+│   ├── PlayerContext.java
 │   ├── MinecraftItemData.java
 │   ├── MinecraftRecipeData.java
 │   └── WorldQueryResult.java
@@ -450,21 +441,33 @@ This does not require shared Java/TypeScript code generation. Matching Java DTOs
 
 ### Phase 0 — Stabilize the Existing Boundary
 
-**Priority: next**
+**Status: complete**
 
 Goal: correct known inconsistencies before generalizing or adding world queries.
 
 Tasks:
 
-- Define an explicit Java request DTO and matching TypeScript request type.
-- Replace the long `generateAnswer()` positional argument list with a request/context object.
-- Add lightweight runtime validation for `POST /ask`.
-- Replace `villageResults` with a structured, generic world-query result.
-- Correctly distinguish village and desert results in the backend prompt.
-- Define behavior for a question that requests more than one search target; initially, choose one explicit supported target or return a clear limitation rather than silently overwriting.
-- Represent player position as numeric coordinates instead of a formatted string.
-- Make backend URL/port/model configuration explicit without building a large configuration system.
-- Add a small serialization/route test fixture to ensure Java JSON and backend expectations remain aligned.
+- [x] Define an explicit Java request DTO and matching TypeScript request type.
+- [x] Replace the long `generateAnswer()` positional argument list with a request/context object.
+- [x] Add lightweight runtime validation for `POST /ask`.
+- [x] Replace `villageResults` with a structured, generic world-query result.
+- [x] Correctly distinguish village and desert results in the backend prompt.
+- [x] Return a clear limitation without performing a partial search when more than one supported target is named.
+- [x] Represent player position as numeric coordinates instead of a formatted string.
+- [x] Make backend URL/host/port/model configuration explicit without building a large configuration system.
+- [x] Add a representative Java-compatible request fixture and automated contract/prompt tests.
+- [x] Enforce plain-text Minecraft responses and remove unsupported Markdown formatting.
+- [x] Increase desert biome sampling intervals after a 6,400-block scan blocked the IntegratedServer for roughly 41 seconds during manual testing.
+- [x] Complete manual in-game regression testing for normal questions, village searches, desert searches, and multi-target handling.
+
+Phase 0 validation notes:
+
+- Village lookup returned authoritative coordinates successfully.
+- Desert lookup initially took roughly 43 seconds and blocked the IntegratedServer by 824 ticks.
+- Increasing biome sampling intervals reduced the retest to at most 5 seconds end-to-end with no search-related server-overload warning.
+- The coarser sample returned a nearby point in the same desert, which is acceptable because biome navigation coordinates are approximate.
+- Plain-text response formatting and immediate multi-target rejection were confirmed in Minecraft chat.
+- The non-Overworld `UNSUPPORTED` path is covered by the request contract and should receive an additional in-game spot check while Phase 1 generalizes dimension-aware querying.
 
 Acceptance criteria:
 
@@ -835,9 +838,9 @@ When these goals are substantially complete, stop adding major features. Review 
 
 When development resumes, use this order:
 
-1. Create a small regression checklist for the currently working village, desert, normal-question, and failure flows.
-2. Stabilize and validate the Java-to-TypeScript request contract.
-3. Replace the misleading `villageResults` string with structured world-query data.
+1. [x] Create a small regression checklist for the currently working village, desert, normal-question, and failure flows.
+2. [x] Stabilize and validate the Java-to-TypeScript request contract.
+3. [x] Replace the misleading `villageResults` string with structured world-query data.
 4. Refactor village/desert searches onto generic structure/biome helpers.
 5. Improve location-intent detection and test positive/negative phrasing.
 6. Clean `CraftAiClient`, template remnants, and diagnostics without changing behavior.
@@ -847,4 +850,3 @@ When development resumes, use this order:
 10. Add contextual recommendations, multi-step help, and limited conversation context only after the underlying facts are reliable.
 
 This order protects the project's working foundation while making each later feature easier to add and verify.
-
