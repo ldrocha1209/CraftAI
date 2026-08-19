@@ -30,9 +30,27 @@
   },
   "recipe": {
     "recipeId": "minecraft:oak_planks",
-    "ingredients": {
-      "minecraft:oak_log": 1
-    }
+    "type": "SHAPELESS",
+    "output": {
+      "itemId": "minecraft:oak_planks",
+      "count": 4
+    },
+    "requirements": [
+      {
+        "alternatives": [
+          "minecraft:oak_log"
+        ],
+        "tags": [],
+        "requiredCount": 1,
+        "availableCount": 1,
+        "availableItems": {
+          "minecraft:oak_log": 1
+        },
+        "missingCount": 0
+      }
+    ],
+    "craftable": true,
+    "totalMissing": 0
   },
   "worldQuery": {
     "kind": "STRUCTURE",

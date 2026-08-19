@@ -35,7 +35,21 @@ export interface MatchedItem {
 
 export interface MinecraftRecipe {
     recipeId: string;
-    ingredients: Record<string, number>;
+    type: "SHAPED" | "SHAPELESS";
+    output: {
+        itemId: string;
+        count: number;
+    };
+    requirements: Array<{
+        alternatives: string[];
+        tags: string[];
+        requiredCount: number;
+        availableCount: number;
+        availableItems: Record<string, number>;
+        missingCount: number;
+    }>;
+    craftable: boolean;
+    totalMissing: number;
 }
 
 export type WorldQueryKind = "STRUCTURE" | "BIOME";

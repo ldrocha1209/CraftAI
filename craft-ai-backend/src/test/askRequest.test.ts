@@ -33,7 +33,117 @@ test("accepts the representative Java request contract", () => {
         deltaZBlocks: -248,
         direction: "EAST"
     });
-    assert.deepEqual(request.recipe?.ingredients, { "minecraft:oak_log": 1 });
+    assert.deepEqual(request.recipe, {
+        recipeId: "minecraft:oak_planks",
+        type: "SHAPELESS",
+        output: { itemId: "minecraft:oak_planks", count: 4 },
+        requirements: [{
+            alternatives: ["minecraft:oak_log"],
+            tags: [],
+            requiredCount: 1,
+            availableCount: 1,
+            availableItems: { "minecraft:oak_log": 1 },
+            missingCount: 0
+        }],
+        craftable: true,
+        totalMissing: 0
+    });
+});
+
+test("accepts deterministic missing-material recipe analysis", () => {
+    const request = parseAskRequest({
+        ...(fixture as object),
+        player: {
+            ...((fixture as { player: object }).player),
+            inventory: { "minecraft:diamond": 1, "minecraft:stick": 1 }
+        },
+        matchedItem: {
+            id: "minecraft:diamond_sword",
+            name: "Diamond Sword",
+            maxStackSize: 1
+        },
+        recipe: {
+            recipeId: "minecraft:diamond_sword",
+            type: "SHAPED",
+            output: { itemId: "minecraft:diamond_sword", count: 1 },
+            requirements: [
+                {
+                    alternatives: ["minecraft:diamond"],
+                    tags: [],
+                    requiredCount: 2,
+                    availableCount: 1,
+                    availableItems: { "minecraft:diamond": 1 },
+                    missingCount: 1
+                },
+                {
+                    alternatives: ["minecraft:stick"],
+                    tags: [],
+                    requiredCount: 1,
+                    availableCount: 1,
+                    availableItems: { "minecraft:stick": 1 },
+                    missingCount: 0
+                }
+            ],
+            craftable: false,
+            totalMissing: 1
+        }
+    });
+
+    assert.equal(request.recipe?.craftable, false);
+    assert.equal(request.recipe?.totalMissing, 1);
+});
+
+test("rejects recipe output that does not match the detected item", () => {
+    const invalid = structuredClone(fixture as object) as Record<string, any>;
+    invalid.recipe.output.itemId = "minecraft:spruce_planks";
+
+    assert.throws(
+        () => parseAskRequest(invalid),
+        (error: unknown) => {
+            assert.ok(error instanceof RequestValidationError);
+            assert.ok(error.issues.includes(
+                "recipe.output.itemId must match matchedItem.id."
+            ));
+            return true;
+        }
+    );
+});
+
+test("rejects inconsistent or over-allocated recipe inventory facts", () => {
+    const invalid = structuredClone(fixture as object) as Record<string, any>;
+    invalid.recipe.requirements[0].requiredCount = 13;
+    invalid.recipe.requirements[0].availableCount = 13;
+    invalid.recipe.requirements[0].availableItems["minecraft:oak_log"] = 13;
+
+    assert.throws(
+        () => parseAskRequest(invalid),
+        (error: unknown) => {
+            assert.ok(error instanceof RequestValidationError);
+            assert.ok(error.issues.includes(
+                "recipe allocates more minecraft:oak_log than the player inventory contains."
+            ));
+            return true;
+        }
+    );
+});
+
+test("rejects recipe totals and craftable flags that contradict requirements", () => {
+    const invalid = structuredClone(fixture as object) as Record<string, any>;
+    invalid.recipe.requirements[0].missingCount = 1;
+
+    assert.throws(
+        () => parseAskRequest(invalid),
+        (error: unknown) => {
+            assert.ok(error instanceof RequestValidationError);
+            assert.ok(error.issues.includes(
+                "recipe.requirements[0] available and missing counts must equal requiredCount."
+            ));
+            assert.ok(error.issues.includes(
+                "recipe.totalMissing must equal the requirement missing total."
+            ));
+            return true;
+        }
+    );
 });
 
 test("allows optional item, recipe, position, and world query context to be absent", () => {

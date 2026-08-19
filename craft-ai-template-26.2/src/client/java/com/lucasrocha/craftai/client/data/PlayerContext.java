@@ -48,4 +48,8 @@ public class PlayerContext {
     public String getDimension() {
         return dimension;
     }
+
+    public Map<String, Integer> getInventory() {
+        return inventory;
+    }
 }
